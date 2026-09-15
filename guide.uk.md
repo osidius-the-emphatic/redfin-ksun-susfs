@@ -2,7 +2,7 @@
 
 [English](guide.md) | [Українська](guide.uk.md)
 
-Це відтворюваний робочий процес для ядра Android 14 Pixel 5 (`redfin`) у цьому репозиторії. Він збирає KernelSU-Next із підтримкою legacy SuSFS v2, зберігаючи сумісність зі стоковими модулями ядра з `/vendor`.
+Це відтворюваний порядок дій для ядра Android 14 Pixel 5 (`redfin`) у цьому репозиторії. Він збирає KernelSU-Next із підтримкою застарілої SuSFS v2, зберігаючи сумісність зі стоковими модулями ядра з `/vendor`.
 
 Скрипти готують дерево вихідних текстів і створюють образи. Вони **не** прошивають телефон. Самостійно запускайте команди збирання та пакування: обидві можуть тривати довго.
 
@@ -28,7 +28,7 @@
 | `patches/series` | Авторитетний порядок серії патчів. |
 | `config/versions.env` | Закріплені база ядра Google і ревізія KernelSU-Next. |
 | `tools/verify_stock_vendor_module_abi.sh` | Внутрішня перевірка ABI зі стоковими модулями vendor. |
-| `out/android-msm-pixel-4.19/dist/` | Результат збірки, доказ, ABI-звіт і фінальні артефакти ядра. Не відстежується Git. |
+| `out/android-msm-pixel-4.19/dist/` | Результат збірки, файл доказів, ABI-звіт і фінальні артефакти ядра. Не відстежується Git. |
 | `stock-images/` | Відповідні заводські `boot.img`, `vendor_boot.img` та `vendor.img`. Не відстежується Git. |
 | `repacked-images/` | Пакети образів, створені скриптом пакування. Не відстежується Git. |
 
@@ -36,10 +36,10 @@ KernelSU-Next і SuSFS навмисно є окремими патчами. Це
 
 ## 1. Передумови
 
-Встановіть залежності збірки ядра Android, `repo`, Git, Python 3, `lz4`, `cpio`, `unpack_bootimg`, `mkbootimg`, `avbtool`, `fastboot` та `adb`. Точне розташування інструментів можна вказати через змінні середовища, якщо їх немає в `PATH`.
+Встановіть залежності збірки ядра Android, `repo`, Git, Python 3, `lz4`, `cpio`, `fastboot` та `adb`. Скрипти беруть `unpack_bootimg`, `mkbootimg` і `avbtool` з робочої копії Google; для пакування в `PATH` мають бути лише `lz4` і `cpio`.
 
 Для перевірки root після прошивання та керування дозволами встановіть APK
-KernelSU-Next Manager, сумісний із вбудованим компонентом KernelSU-Next.
+програму KernelSU-Next, сумісну із вбудованим компонентом KernelSU-Next.
 
 Тримайте доступними такі файли заводського образу для цільового релізу:
 
@@ -49,30 +49,37 @@ KernelSU-Next Manager, сумісний із вбудованим компоне
 - `vbmeta.img`
 - `vbmeta_system.img`
 
-Використовуйте файли, витягнуті з того самого factory image, який встановлений на телефоні. Не поєднуйте образи boot або vbmeta з іншої збірки. Перед першою прошивкою збережіть копію відомих робочих стокових образів поза цим репозиторієм — це шлях відновлення.
+Використовуйте файли, витягнуті з того самого заводського образу, який встановлений на телефоні. Не поєднуйте образи boot або vbmeta з іншої збірки. Перед першою прошивкою збережіть копію відомих робочих стокових образів поза цим репозиторієм — це шлях відновлення.
 
-## 2. Оберіть каталоги та відкрийте checkout у WSL
+## 2. Оберіть каталоги та відкрийте робочу копію у WSL
 
-GitHub-репозиторій проєкту та checkout Google `repo` є окремими. Файли
-проєкту мають бути доступні всередині checkout ядра, оскільки скрипт збірки
-використовує поточний каталог як корінь checkout. Оберіть шляхи для своєї
-системи та залиште змінні в тій самій сесії shell:
+GitHub-репозиторій проєкту та робоча копія Google `repo` є окремими. Запускайте
+скрипти з кореня робочої копії — тоді параметри та експортовані змінні не потрібні.
+Оберіть шляхи для своєї системи:
 
 ```bash
 KERNEL_CHECKOUT="$HOME/dev/redbull-kernel"
-PROJECT_DIR="$KERNEL_CHECKOUT/ksun-susfs"
-STOCK_IMAGES_DIR="$KERNEL_CHECKOUT/stock-images"
+PROJECT="$KERNEL_CHECKOUT/ksun-susfs"
 cd "$KERNEL_CHECKOUT"
 ```
 
-Це приклади розташування, а не фіксовані вимоги. `PROJECT_DIR` може бути
-будь-яким каталогом із цим GitHub-репозиторієм, але кожну команду збирання та
-пакування потрібно запускати, коли поточним є корінь checkout ядра.
+Це приклади розташування, а не фіксовані вимоги. `KERNEL_CHECKOUT` потрібний
+лише для запуску з іншого каталогу; без нього використовується поточний
+каталог. `PROJECT` може бути будь-яким каталогом із цим GitHub-репозиторієм.
+
+| Вхідне значення | Значення за замовчуванням | Одноразова зміна |
+| --- | --- | --- |
+| `KERNEL_CHECKOUT` | Поточний каталог | `--kernel-checkout PATH` |
+| `STOCK_IMAGES` | `$KERNEL_CHECKOUT/stock-images` | `--stock-images PATH` |
+| `DIST` | `$KERNEL_CHECKOUT/out/android-msm-pixel-4.19/dist` | `--dist PATH` |
+
+`GOOGLE_BASE_COMMIT` і ревізія KernelSU зберігаються в `config/versions.env`;
+окремого параметра `KERNEL_COMMIT` немає.
 
 ## 3. Отримайте або повторно використайте дерево вихідних текстів Google
 
-Для нового checkout ініціалізуйте й синхронізуйте маніфест ядра Google, а
-потім клонуйте цей проєкт у вибраний `PROJECT_DIR`:
+Для нової робочої копії ініціалізуйте й синхронізуйте маніфест ядра Google, а
+потім клонуйте цей проєкт у вибраний `PROJECT`:
 
 ```bash
 mkdir -p "$KERNEL_CHECKOUT"
@@ -80,19 +87,19 @@ cd "$KERNEL_CHECKOUT"
 repo init -u https://android.googlesource.com/kernel/manifest \
   -b android-msm-redbull-4.19-android14
 repo sync -j8
-git clone https://github.com/osidius-the-emphatic/redfin-ksun-susfs.git "$PROJECT_DIR"
+git clone https://github.com/osidius-the-emphatic/redfin-ksun-susfs.git "$PROJECT"
 ```
 
 Для цих команд не існує обов'язкового формату прогресу. Успішні `repo init`,
 `repo sync` і `git clone` завершуються зі статусом `0`; будь-яка критична
-помилка або ненульовий статус означає, що checkout неповний і його потрібно
+помилка або ненульовий статус означає, що робоча копія неповна і її потрібно
 виправити до початку збірки.
 
-Якщо checkout ядра та репозиторій проєкту вже існують, не повторюйте ці
+Якщо робоча копія ядра та репозиторій проєкту вже існують, не повторюйте ці
 команди. Переконайтеся, що наявні `private/msm-google`, `build` і
-`$PROJECT_DIR/patches/series`, після чого переходьте до розділу 4.
+`$PROJECT/patches/series`, після чого переходьте до розділу 4.
 
-### Повторна збірка з наявним checkout
+### Повторна збірка з наявною робочою копією
 
 Після попередньої спроби локально поверніть проєкти Google `repo` до ревізій
 маніфесту перед повторним застосуванням серії патчів:
@@ -114,7 +121,7 @@ Google чисті та перебувають на ревізіях маніфе
 Якщо локальних об'єктів недостатньо, один раз виконайте звичайний `repo sync`.
 
 Не запускайте reset-команди, якщо потрібно зберегти локальні зміни ядра.
-Натомість використайте окремий checkout або спочатку збережіть ці зміни.
+Натомість використайте окрему робочу копію або спочатку збережіть ці зміни.
 Скрипт збірки вимагає, щоб проєкт ядра Google точно перебував на закріпленому
 базовому коміті, і відмовляється працювати з відстежуваними змінами.
 
@@ -125,24 +132,24 @@ rm -rf "$KERNEL_CHECKOUT/out/android-msm-pixel-4.19"
 ```
 
 `out/` — це згенерований результат. Видаляйте лише цей точний каталог після
-підтвердження, що `KERNEL_CHECKOUT` є потрібним checkout ядра.
+підтвердження, що `KERNEL_CHECKOUT` вказує на потрібну робочу копію ядра.
 
 ## 4. Розмістіть стокові образи
 
-Створіть каталог, названий у `STOCK_IMAGES_DIR`, і скопіюйте до нього
+Створіть каталог, названий у `STOCK_IMAGES`, і скопіюйте до нього
 відповідні заводські `boot.img`, `vendor_boot.img`, `vendor.img`, `vbmeta.img`
-та `vbmeta_system.img`. Та сама змінна передається обом скриптам. Скрипти
-автоматично знаходять інструменти образів Android усередині checkout; не
-потрібно експортувати `MKBOOTIMG`, `UNPACK_BOOTIMG` чи `AVBTOOL`.
+та `vbmeta_system.img`. Скрипти автоматично використовують однаковий каталог
+для обох етапів і знаходять інструменти образів Android усередині робочої копії;
+не потрібно експортувати `MKBOOTIMG`, `UNPACK_BOOTIMG` чи `AVBTOOL`.
 
 Перед початком довгої збірки перевірте вхідні дані:
 
 ```bash
-test -f "$STOCK_IMAGES_DIR/boot.img"
-test -f "$STOCK_IMAGES_DIR/vendor_boot.img"
-test -f "$STOCK_IMAGES_DIR/vendor.img"
-test -f "$STOCK_IMAGES_DIR/vbmeta.img"
-test -f "$STOCK_IMAGES_DIR/vbmeta_system.img"
+test -f "$STOCK_IMAGES/boot.img"
+test -f "$STOCK_IMAGES/vendor_boot.img"
+test -f "$STOCK_IMAGES/vendor.img"
+test -f "$STOCK_IMAGES/vbmeta.img"
+test -f "$STOCK_IMAGES/vbmeta_system.img"
 command -v lz4
 command -v cpio
 ```
@@ -158,14 +165,13 @@ command -v cpio
 
 ## 5. Зберіть KernelSU-Next + SuSFS
 
-Це тривалий крок. Скрипт скидає `private/msm-google` до коміту, закріпленого в `config/versions.env`, переходить на закріплену ревізію KernelSU-Next, застосовує впорядковані патчі, збирає з VINTF-конфігурацією та записує докази до `dist/`.
+Це тривалий крок. Скрипт скидає `private/msm-google` до коміту, закріпленого в `config/versions.env`, переходить на закріплену ревізію KernelSU-Next, застосовує впорядковані патчі, збирає з VINTF-конфігурацією та записує файли доказів до `dist/`.
 
-Підсумковий release ядра має вигляд `4.19.278-ksun-susfs-g<integration-sha>`, де SHA ідентифікує єдиний локальний коміт із застосованою інтеграцією. Він навмисно не використовує неінформативний суфікс Git-відстані `00001`.
+Підсумковий рядок версії ядра має вигляд `4.19.278-ksun-susfs-g<integration-sha>`, де SHA ідентифікує єдиний локальний коміт із застосованою інтеграцією. Він навмисно не використовує неінформативний суфікс відстані Git `00001`.
 
 ```bash
 cd "$KERNEL_CHECKOUT"
-bash "$PROJECT_DIR/build_ksu_next_susfs_kmi.sh" \
-  --stock-images-dir "$STOCK_IMAGES_DIR"
+bash "$PROJECT/build_ksu_next_susfs_kmi.sh"
 ```
 
 Не запускайте пакування, доки ця команда не завершиться успішно.
@@ -189,7 +195,7 @@ out/android-msm-pixel-4.19/dist/stock-vendor-module-abi-kmi-full-report.txt
 
 ## 6. Перевірте результат збірки
 
-Перед пакуванням безпосередньо перегляньте доказ та результат ABI:
+Перед пакуванням безпосередньо перегляньте файл доказів та результат ABI:
 
 ```bash
 cd "$KERNEL_CHECKOUT"
@@ -202,25 +208,26 @@ test -s out/android-msm-pixel-4.19/dist/Image.lz4-dtb
 
 `sed` лише виводить докази; він нічого не змінює. `test -s` нічого не виводить і повертає 0, коли образ ядра існує та не порожній; відсутній або порожній образ повертає 1. Доказ фіксує точний коміт вихідних текстів KernelSU, перевірки цілісності `seccomp`, контрольну суму фінальної конфігурації та хеші образів. Серія патчів фіксується окремо в `patches/series`.
 
-## 7. Запакуйте boot і vendor_boot
+## 7. Запакуйте `boot` і `vendor_boot`
 
-Пакування відокремлене від збирання. Воно використовує успішний `dist/Image.lz4-dtb` і стокові артефакти boot, а потім записує новий каталог нижче `repacked-images/`.
+Пакування відокремлене від збирання. Воно використовує успішний `dist/Image.lz4-dtb` і заводські артефакти boot, а потім створює новий каталог у `repacked-images/`.
 
 ```bash
 cd "$KERNEL_CHECKOUT"
-bash "$PROJECT_DIR/package_kernel_images.sh" \
-  --stock-images-dir "$STOCK_IMAGES_DIR"
+bash "$PROJECT/package_kernel_images.sh"
 ```
 
 Скрипт виводить точний каталог результату. Перевірте його перед прошиванням: він має містити замінні `boot.img`, `vendor_boot.img`, контрольні суми, доказ та метадані пакування.
 
-Зазвичай немає потреби підтримувати окремі шляхи стокових образів: єдина змінна `STOCK_IMAGES_DIR` передається обом скриптам. Значення скриптів за замовчуванням `./stock-images` зберігається лише як запасний варіант для прямого використання без змінної.
+Зазвичай немає потреби підтримувати окремі шляхи стокових образів: обидва
+скрипти використовують `$KERNEL_CHECKOUT/stock-images` за замовчуванням.
+Задайте `STOCK_IMAGES` або передайте `--stock-images` лише для іншого шляху.
 
 Ніколи не перезаписуйте стокові вхідні образи. Згенеровані образи належать до `repacked-images/`; стокові вхідні дані лишаються незмінними артефактами відновлення.
 
 ## 8. Прошийте згенеровані образи
 
-Прошивання змінює пристрій. Підтвердьте каталог результату та хеші, а потім перезавантажтеся до bootloader:
+Прошивання змінює пристрій. Підтвердьте каталог результату та хеші, а потім перезавантажтеся до завантажувача:
 
 ```bash
 adb reboot bootloader
@@ -231,21 +238,21 @@ fastboot getvar current-slot
 Зафіксуйте показаний слот (`a` або `b`). Це цільовий слот для нового ядра. На
 A/B-пристрої прошивання `boot` або `vendor_boot` без явного слоту записує до
 поточного слоту; інший слот зберігає попередній вміст і залишається доступним
-як fallback. Якщо новий слот не завантажиться і не буде позначений успішним,
-bootloader може автоматично спробувати інший слот. Також можна перемкнутися
+як запасний варіант. Якщо новий слот не завантажиться і не буде позначений успішним,
+завантажувач може автоматично спробувати інший слот. Також можна перемкнутися
 вручну через `fastboot set_active a` або `fastboot set_active b`.
 
 Використайте згенеровані `boot.img` і `vendor_boot.img` з пакета разом із
 відповідними заводськими `vbmeta.img` та `vbmeta_system.img` з
-`STOCK_IMAGES_DIR`. Усталений протокол Pixel 5 прошиває обидва розділи vbmeta
+`STOCK_IMAGES`. Усталений протокол Pixel 5 прошиває обидва розділи vbmeta
 в обидва слоти й вимикає AVB-перевірку та verity:
 
 ```bash
-PACKAGE_DIR="$KERNEL_CHECKOUT/repacked-images/redbull.xxxxxx"  # use the directory printed by packaging
+PACKAGE_DIR="$KERNEL_CHECKOUT/repacked-images/redbull.xxxxxx"  # використайте каталог, який вивів скрипт пакування
 fastboot flash boot "$PACKAGE_DIR/boot.img"
 fastboot flash vendor_boot "$PACKAGE_DIR/vendor_boot.img"
-fastboot flash --slot all --disable-verity --disable-verification vbmeta "$STOCK_IMAGES_DIR/vbmeta.img"
-fastboot flash --slot all --disable-verity --disable-verification vbmeta_system "$STOCK_IMAGES_DIR/vbmeta_system.img"
+fastboot flash --slot all --disable-verity --disable-verification vbmeta "$STOCK_IMAGES/vbmeta.img"
+fastboot flash --slot all --disable-verity --disable-verification vbmeta_system "$STOCK_IMAGES/vbmeta_system.img"
 fastboot reboot
 ```
 
@@ -320,15 +327,15 @@ adb shell su -c 'dmesg | grep -Ei "incrementalfs|disagrees about version|invalid
 
 ## 10. Відновлення
 
-Якщо пристрій не завантажується, поверніться до bootloader та відновіть відомі робочі стокові `boot.img` і `vendor_boot.img` для встановленого factory release:
+Якщо пристрій не завантажується, поверніться до завантажувача та відновіть відомі робочі стокові `boot.img` і `vendor_boot.img` для встановленого заводського випуску:
 
 ```bash
-fastboot flash boot "$STOCK_IMAGES_DIR/boot.img"
-fastboot flash vendor_boot "$STOCK_IMAGES_DIR/vendor_boot.img"
+fastboot flash boot "$STOCK_IMAGES/boot.img"
+fastboot flash vendor_boot "$STOCK_IMAGES/vendor_boot.img"
 fastboot reboot
 ```
 
-Для пристрою A/B спочатку перевірте активний слот через `fastboot getvar current-slot`. Не перемикайте та не перезаписуйте слоти необережно; якщо відновлення потрібне для обох слотів, використовуйте процедуру factory image.
+Для пристрою A/B спочатку перевірте активний слот через `fastboot getvar current-slot`. Не перемикайте та не перезаписуйте слоти необережно; якщо відновлення потрібне для обох слотів, використовуйте процедуру заводського образу.
 
 ## Оновлення KernelSU-Next або SuSFS
 
@@ -345,7 +352,7 @@ fastboot reboot
 
 ## Навіщо існує `versions.env`
 
-`config/versions.env` — єдине джерело істини щодо upstream-вхідних даних: коміту бази ядра Google та пари тег/коміт KernelSU-Next. Скрипт збірки читає його перед зміною дерева вихідних текстів і відмовляється працювати з неочікуваним комітом. Це запобігає застосуванню серії патчів до незафіксованої upstream-ревізії та робить оновлення невеликою зміною, придатною до перевірки, замість прихованої заміни архівом. Він не містить образів пристрою чи шляхів до інструментів.
+`config/versions.env` — єдине джерело істини щодо зовнішніх вхідних даних: коміту бази ядра Google та пари тег/коміт KernelSU-Next. Скрипт збірки читає його перед зміною дерева вихідних текстів і відмовляється працювати з неочікуваним комітом. Це запобігає застосуванню серії патчів до незакріпленої зовнішньої ревізії та робить оновлення невеликою зміною, придатною до перевірки, замість прихованої заміни архівом. Він не містить образів пристрою чи шляхів до інструментів.
 
 ## Усунення несправностей
 
@@ -354,7 +361,7 @@ fastboot reboot
 Звичайною причиною був кінець рядка CRLF у `patches/series`, через який Bash шукав файл з прихованим символом повернення каретки в кінці імені. Серія, що відстежується, тепер використовує LF, а скрипт збірки захисно видаляє завершальний символ повернення каретки.
 
 ```bash
-cd "$PROJECT_DIR"
+cd "$PROJECT"
 git status --short
 file patches/series
 test -f patches/susfs-v2.2.0-redbull.patch

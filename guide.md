@@ -36,7 +36,7 @@ KernelSU-Next and SuSFS are intentionally separate patches. This makes upgrades 
 
 ## 1. Prerequisites
 
-Install the Android kernel build dependencies, `repo`, Git, Python 3, `lz4`, `cpio`, `unpack_bootimg`, `mkbootimg`, `avbtool`, `fastboot`, and `adb`. The exact tool locations can be supplied through environment variables when they are not in `PATH`.
+Install the Android kernel build dependencies, `repo`, Git, Python 3, `lz4`, `cpio`, `fastboot`, and `adb`. The scripts use `unpack_bootimg`, `mkbootimg`, and `avbtool` from the Google checkout; only `lz4` and `cpio` must be in `PATH` for packaging.
 
 For post-flash root verification and permission management, install the
 KernelSU-Next Manager APK matching the embedded KernelSU-Next component.
@@ -53,26 +53,36 @@ Use files extracted from the same factory image installed on the phone. Do not c
 
 ## 2. Choose directories and open WSL
 
-The GitHub project repository and the Google `repo` checkout are separate. The
-project files must be available below the kernel checkout because the build
-script uses the current directory as the checkout root. Choose these paths for
-your machine and keep the variables in the same shell session:
+The GitHub project repository and the Google `repo` checkout are separate. Run
+the scripts from the checkout root and they need no arguments or exported
+variables. Choose these paths for your machine:
 
 ```bash
 KERNEL_CHECKOUT="$HOME/dev/redbull-kernel"
-PROJECT_DIR="$KERNEL_CHECKOUT/ksun-susfs"
-STOCK_IMAGES_DIR="$KERNEL_CHECKOUT/stock-images"
+PROJECT="$KERNEL_CHECKOUT/ksun-susfs"
 cd "$KERNEL_CHECKOUT"
 ```
 
-These are example locations, not fixed requirements. `PROJECT_DIR` may be any
-directory containing this GitHub repository, but every build and package
-command must be run with the kernel checkout as the current directory.
+These are example locations, not fixed requirements. `KERNEL_CHECKOUT` is only
+needed when launching from another directory; otherwise the current directory
+is used. `PROJECT` may be any directory containing this repository.
+
+The shared script inputs are:
+
+| Input | Default | Override |
+| --- | --- | --- |
+| `KERNEL_CHECKOUT` | Current directory | `--kernel-checkout PATH` |
+| `STOCK_IMAGES` | `$KERNEL_CHECKOUT/stock-images` | `--stock-images PATH` |
+| `DIST` | `$KERNEL_CHECKOUT/out/android-msm-pixel-4.19/dist` | `--dist PATH` |
+
+`GOOGLE_BASE_COMMIT` and the KernelSU revision are fixed in
+`config/versions.env`; there is no `KERNEL_COMMIT` parameter. This keeps the
+source version in one place and makes both scripts consistent.
 
 ## 3. Obtain or reuse the Google source tree
 
 For a new checkout, initialize and synchronize the Google kernel manifest, then
-clone this project into the chosen `PROJECT_DIR`:
+clone this project into the chosen `PROJECT`:
 
 ```bash
 mkdir -p "$KERNEL_CHECKOUT"
@@ -80,7 +90,7 @@ cd "$KERNEL_CHECKOUT"
 repo init -u https://android.googlesource.com/kernel/manifest \
   -b android-msm-redbull-4.19-android14
 repo sync -j8
-git clone https://github.com/osidius-the-emphatic/redfin-ksun-susfs.git "$PROJECT_DIR"
+git clone https://github.com/osidius-the-emphatic/redfin-ksun-susfs.git "$PROJECT"
 ```
 
 The commands do not have a required progress format. A successful `repo init`,
@@ -89,7 +99,7 @@ status means that the checkout is incomplete and must be fixed before building.
 
 If the kernel checkout and project repository already exist, do not repeat
 these commands. Confirm that `private/msm-google`, `build`, and
-`$PROJECT_DIR/patches/series` are present, then continue with section 4.
+`$PROJECT/patches/series` are present, then continue with section 4.
 
 ### Repeat a build with an existing checkout
 
@@ -128,7 +138,7 @@ that `KERNEL_CHECKOUT` is the intended kernel checkout.
 
 ## 4. Place the stock images
 
-Create the directory named by `STOCK_IMAGES_DIR` and copy the matching factory
+Create the directory named by `STOCK_IMAGES` and copy the matching factory
 `boot.img`, `vendor_boot.img`, `vendor.img`, `vbmeta.img`, and
 `vbmeta_system.img` into it. The same variable is passed to both scripts. The
 scripts find Android image tools inside the checkout automatically; no
@@ -137,11 +147,11 @@ scripts find Android image tools inside the checkout automatically; no
 Check inputs before starting the long build:
 
 ```bash
-test -f "$STOCK_IMAGES_DIR/boot.img"
-test -f "$STOCK_IMAGES_DIR/vendor_boot.img"
-test -f "$STOCK_IMAGES_DIR/vendor.img"
-test -f "$STOCK_IMAGES_DIR/vbmeta.img"
-test -f "$STOCK_IMAGES_DIR/vbmeta_system.img"
+test -f "$STOCK_IMAGES/boot.img"
+test -f "$STOCK_IMAGES/vendor_boot.img"
+test -f "$STOCK_IMAGES/vendor.img"
+test -f "$STOCK_IMAGES/vbmeta.img"
+test -f "$STOCK_IMAGES/vbmeta_system.img"
 command -v lz4
 command -v cpio
 ```
@@ -162,8 +172,7 @@ The resulting kernel release is `4.19.278-ksun-susfs-g<integration-sha>`, where 
 
 ```bash
 cd "$KERNEL_CHECKOUT"
-bash "$PROJECT_DIR/build_ksu_next_susfs_kmi.sh" \
-  --stock-images-dir "$STOCK_IMAGES_DIR"
+bash "$PROJECT/build_ksu_next_susfs_kmi.sh"
 ```
 
 Do not run packaging until this command succeeds.
@@ -206,13 +215,14 @@ Packaging is separate from building. It consumes the successful `dist/Image.lz4-
 
 ```bash
 cd "$KERNEL_CHECKOUT"
-bash "$PROJECT_DIR/package_kernel_images.sh" \
-  --stock-images-dir "$STOCK_IMAGES_DIR"
+bash "$PROJECT/package_kernel_images.sh"
 ```
 
 The script prints the exact output directory. Inspect it before flashing; it must contain replacement `boot.img`, `vendor_boot.img`, checksums, proof, and packaging metadata.
 
-There is normally no reason to maintain separate stock-image paths: the single `STOCK_IMAGES_DIR` variable is passed to both scripts. The scripts' `./stock-images` default remains only as a fallback for direct use without the variable.
+There is normally no reason to maintain separate stock-image paths: both
+scripts use the same `$KERNEL_CHECKOUT/stock-images` default. Set
+`STOCK_IMAGES` or pass `--stock-images` only when the images live elsewhere.
 
 Never overwrite the stock input images. Generated images belong in `repacked-images/`; stock inputs remain immutable recovery artifacts.
 
@@ -235,15 +245,15 @@ can also switch manually with `fastboot set_active a` or `fastboot set_active b`
 
 Use the generated `boot.img` and `vendor_boot.img` from the package, together
 with the matching factory `vbmeta.img` and `vbmeta_system.img` from
-`STOCK_IMAGES_DIR`. The established Pixel 5 protocol flashes both vbmeta
+`STOCK_IMAGES`. The established Pixel 5 protocol flashes both vbmeta
 partitions to both slots while disabling AVB verification and verity:
 
 ```bash
 PACKAGE_DIR="$KERNEL_CHECKOUT/repacked-images/redbull.xxxxxx"  # use the directory printed by packaging
 fastboot flash boot "$PACKAGE_DIR/boot.img"
 fastboot flash vendor_boot "$PACKAGE_DIR/vendor_boot.img"
-fastboot flash --slot all --disable-verity --disable-verification vbmeta "$STOCK_IMAGES_DIR/vbmeta.img"
-fastboot flash --slot all --disable-verity --disable-verification vbmeta_system "$STOCK_IMAGES_DIR/vbmeta_system.img"
+fastboot flash --slot all --disable-verity --disable-verification vbmeta "$STOCK_IMAGES/vbmeta.img"
+fastboot flash --slot all --disable-verity --disable-verification vbmeta_system "$STOCK_IMAGES/vbmeta_system.img"
 fastboot reboot
 ```
 
@@ -317,8 +327,8 @@ KernelSU builds do not all expose `/proc/ksu/version` or `/proc/ksu/susfs_enable
 If the device fails to boot, return to the bootloader and restore the known-good stock `boot.img` and `vendor_boot.img` for the installed factory release:
 
 ```bash
-fastboot flash boot "$STOCK_IMAGES_DIR/boot.img"
-fastboot flash vendor_boot "$STOCK_IMAGES_DIR/vendor_boot.img"
+fastboot flash boot "$STOCK_IMAGES/boot.img"
+fastboot flash vendor_boot "$STOCK_IMAGES/vendor_boot.img"
 fastboot reboot
 ```
 
@@ -348,7 +358,7 @@ The manager and embedded KernelSU component are related but may not show identic
 The usual cause was a CRLF line ending in `patches/series`, which made Bash look for a filename ending in a hidden carriage return. The tracked series now uses LF and the build script defensively removes a trailing carriage return.
 
 ```bash
-cd "$PROJECT_DIR"
+cd "$PROJECT"
 git status --short
 file patches/series
 test -f patches/susfs-v2.2.0-redbull.patch

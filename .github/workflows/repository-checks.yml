@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: GPL-2.0-only
+name: Repository checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scripts, pinned revisions, and patch series
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash -n build_ksu_next_susfs_kmi.sh
+          bash -n package_kernel_images.sh
+          bash -n tools/verify_stock_vendor_module_abi.sh
+
+          source config/versions.env
+          for name in GOOGLE_BASE_COMMIT KSUN_EXPECTED_COMMIT; do
+            value="${!name}"
+            [[ "$value" =~ ^[0-9a-f]{40}$ ]] || {
+              echo "$name must be a lowercase 40-character Git commit ID" >&2
+              exit 1
+            }
+          done
+          [[ -n "$KSUN_REF" ]] || {
+            echo 'KSUN_REF must not be empty' >&2
+            exit 1
+          }
+
+          while IFS= read -r patch_name || [[ -n "$patch_name" ]]; do
+            patch_name="${patch_name%$'\r'}"
+            [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
+            [[ "$patch_name" != /* && "$patch_name" != *..* ]] || {
+              echo "unsafe patch path: $patch_name" >&2
+              exit 1
+            }
+            [[ -f "patches/$patch_name" ]] || {
+              echo "patch listed in patches/series is missing: $patch_name" >&2
+              exit 1
+            }
+          done < patches/series
+
+          [[ -f patches/ksun-disable-seccomp-filter-count.patch ]] || {
+            echo 'missing KernelSU compatibility patch' >&2
+            exit 1
+          }
+
+          grep -Fxq 'Repository licensing policy' LICENSE
+          grep -Fxq 'Third-party provenance and notices' NOTICE

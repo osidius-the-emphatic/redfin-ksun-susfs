@@ -20,6 +20,13 @@ The exact revisions used by the build are recorded in `config/versions.env`; the
 
 The series includes `susfs-mount-namespace-copy.patch`, which preserves SUSFS mount IDs when an existing mount namespace is copied through `CLONE_NEWNS`.
 
+## Licensing and provenance
+
+Executable material and original integration patches are `GPL-2.0-only`; the
+README and guide documentation are `CC-BY-4.0`. Patches derived from upstream
+projects retain their applicable upstream notices and terms. See
+[LICENSE](LICENSE) for scope and [NOTICE](NOTICE) for third-party provenance.
+
 ## Inputs
 
 - Pixel 5 (`redfin`) Android 14 kernel checkout under WSL/Linux.

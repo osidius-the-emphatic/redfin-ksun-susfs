@@ -1,0 +1,43 @@
+Third-party provenance and notices
+==================================
+
+This repository is a patch-based integration workflow. It does not distribute
+a complete Google kernel source tree, factory image, or KernelSU-Next source
+tree. Obtain those inputs from their respective upstream sources.
+
+Google kernel base
+------------------
+
+The patch series targets the Google redbull Android 14 / Linux 4.19 kernel
+base pinned in config/versions.env. Its source is obtained through the Android
+kernel manifest documented in guide.md. Google and Linux kernel copyright and
+license notices remain applicable to that source tree and to any resulting
+derivative kernel image.
+
+KernelSU-Next
+-------------
+
+ksun-disable-seccomp-filter-count.patch is applied to the KernelSU-Next
+revision pinned in config/versions.env. KernelSU-Next is obtained separately
+from https://github.com/sidex15/KernelSU-Next . Preserve the upstream notices
+and license when redistributing any KernelSU-Next-derived material.
+
+SuSFS v2.2.0 reference port
+----------------------------
+
+patches/susfs-v2.2.0-redbull.patch adapts material from
+https://github.com/sreeshankark/android_kernel_oneplus_avicii , branch 14,
+commit 3f46c998. The patch is adapted for the pinned Pixel 5 Google base; it
+does not replace the upstream copyright or licensing terms.
+
+Local Pixel 5 adaptations
+--------------------------
+
+patches/susfs-mount-namespace-copy.patch,
+patches/manual-hooks-redbull.patch,
+patches/kmi-vfsmount.patch,
+patches/kmi-stat-crc-full.patch,
+patches/kmi-namei-crc-full.patch, and
+patches/redbull-defconfig.patch are local integration adaptations for the
+pinned Google base. They are GPL-2.0-only unless a retained upstream notice
+in the patched material requires additional terms.

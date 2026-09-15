@@ -20,10 +20,11 @@ Usage:
   ./package_kernel_images.sh [options]
 
 Options:
-  --stock-images-dir PATH    directory containing factory boot.img and vendor_boot.img
-                             (default: ./stock-images)
-  --dist PATH                build directory (default: out/android-msm-pixel-4.19/dist)
-  --output-dir PATH          new output directory (default: repacked-images/redbull.XXXXXX)
+  --kernel-checkout PATH   redbull-kernel checkout (default: current checkout)
+  --stock-images PATH        directory containing factory boot.img and vendor_boot.img
+                             (default: $KERNEL_CHECKOUT/stock-images)
+  --dist PATH                build directory (default: $KERNEL_CHECKOUT/out/android-msm-pixel-4.19/dist)
+  --output PATH              new output directory (default: repacked-images/redbull.XXXXXX)
   --keep-workdir             retain the temporary directory after success
   -h, --help                 show this help
 
@@ -34,40 +35,22 @@ Result:
 EOF
 }
 
-# A repo(1) checkout has its manifest in the parent directory but is not
-# itself a Git worktree. Therefore, locate it by tree structure instead of
-# using `git rev-parse --show-toplevel`.
-find_checkout_root() {
-    local candidate parent
-    candidate="$(pwd -P)"
-    while :; do
-        if [[ -d "$candidate/tools/mkbootimg" && -d "$candidate/private/msm-google" ]]; then
-            printf '%s\n' "$candidate"
-            return 0
-        fi
-        parent="$(dirname "$candidate")"
-        [[ "$parent" != "$candidate" ]] || return 1
-        candidate="$parent"
-    done
-}
-
-ROOT="$(find_checkout_root)" ||
-    die 'run this script from the redbull-kernel checkout.'
-
-STOCK_IMAGES_DIR="$ROOT/stock-images"
-STOCK_BOOT="$STOCK_IMAGES_DIR/boot.img"
-STOCK_VENDOR_BOOT="$STOCK_IMAGES_DIR/vendor_boot.img"
-DIST="$ROOT/out/android-msm-pixel-4.19/dist"
-OUTPUT_DIR=''
+KERNEL_CHECKOUT="${KERNEL_CHECKOUT:-$(pwd -P)}"
+STOCK_IMAGES="${STOCK_IMAGES:-}"
+DIST="${DIST:-}"
+OUTPUT=''
 KEEP_WORKDIR=0
 
 while (($#)); do
     case "$1" in
-        --stock-images-dir)
-            (($# >= 2)) || die '--stock-images-dir requires a path.'
-            STOCK_IMAGES_DIR="$2"
-            STOCK_BOOT="$STOCK_IMAGES_DIR/boot.img"
-            STOCK_VENDOR_BOOT="$STOCK_IMAGES_DIR/vendor_boot.img"
+        --kernel-checkout)
+            (($# >= 2)) || die '--kernel-checkout requires a path.'
+            KERNEL_CHECKOUT="$2"
+            shift 2
+            ;;
+        --stock-images)
+            (($# >= 2)) || die '--stock-images requires a path.'
+            STOCK_IMAGES="$2"
             shift 2
             ;;
         --dist)
@@ -75,9 +58,9 @@ while (($#)); do
             DIST="$2"
             shift 2
             ;;
-        --output-dir)
-            (($# >= 2)) || die '--output-dir requires a path.'
-            OUTPUT_DIR="$2"
+        --output)
+            (($# >= 2)) || die '--output requires a path.'
+            OUTPUT="$2"
             shift 2
             ;;
         --keep-workdir)
@@ -93,6 +76,13 @@ while (($#)); do
             ;;
     esac
 done
+
+KERNEL_CHECKOUT="$(cd "$KERNEL_CHECKOUT" && pwd -P)" || die "kernel checkout not found: $KERNEL_CHECKOUT"
+ROOT="$KERNEL_CHECKOUT"
+STOCK_IMAGES="${STOCK_IMAGES:-$ROOT/stock-images}"
+STOCK_BOOT="$STOCK_IMAGES/boot.img"
+STOCK_VENDOR_BOOT="$STOCK_IMAGES/vendor_boot.img"
+DIST="${DIST:-$ROOT/out/android-msm-pixel-4.19/dist}"
 
 for command in python3 lz4 cpio cmp find sort sha256sum stat mktemp; do
     command -v "$command" >/dev/null || die "required command not found: $command"
@@ -111,13 +101,13 @@ done
 [[ -d "$DIST" ]] || die "dist directory not found: $DIST"
 
 mkdir -p "$ROOT/repacked-images"
-if [[ -n "$OUTPUT_DIR" ]]; then
-    [[ ! -e "$OUTPUT_DIR" ]] || die "output directory already exists: $OUTPUT_DIR"
-    mkdir -p "$OUTPUT_DIR"
+if [[ -n "$OUTPUT" ]]; then
+    [[ ! -e "$OUTPUT" ]] || die "output directory already exists: $OUTPUT"
+    mkdir -p "$OUTPUT"
 else
-    OUTPUT_DIR="$(mktemp -d "$ROOT/repacked-images/redbull.XXXXXX")"
+    OUTPUT="$(mktemp -d "$ROOT/repacked-images/redbull.XXXXXX")"
 fi
-OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd -P)"
+OUTPUT="$(cd "$OUTPUT" && pwd -P)"
 
 WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/redbull-repack.XXXXXX")"
 
@@ -217,15 +207,15 @@ cp -a "$STOCK_RAMDISK" "$WORKDIR/new-vendor-ramdisk"
 NEW_RAMDISK="$WORKDIR/new-vendor-ramdisk"
 MODULES_CHANGED_FROM_STOCK=0
 MODULES_IDENTICAL_TO_STOCK=0
-: > "$OUTPUT_DIR/modules-different-from-stock.txt"
-: > "$OUTPUT_DIR/modules-identical-to-stock.txt"
+: > "$OUTPUT/modules-different-from-stock.txt"
+: > "$OUTPUT/modules-identical-to-stock.txt"
 for module in "${STOCK_MODULES[@]}"; do
     [[ -f "$DIST/$module" ]] || die "required stock module absent from dist: $module"
     if cmp -s "$STOCK_RAMDISK/lib/modules/$module" "$DIST/$module"; then
-        printf '%s\n' "$module" >> "$OUTPUT_DIR/modules-identical-to-stock.txt"
+        printf '%s\n' "$module" >> "$OUTPUT/modules-identical-to-stock.txt"
         ((MODULES_IDENTICAL_TO_STOCK += 1))
     else
-        printf '%s\n' "$module" >> "$OUTPUT_DIR/modules-different-from-stock.txt"
+        printf '%s\n' "$module" >> "$OUTPUT/modules-different-from-stock.txt"
         ((MODULES_CHANGED_FROM_STOCK += 1))
     fi
     cp -f -- "$DIST/$module" "$NEW_RAMDISK/lib/modules/$module"
@@ -242,11 +232,11 @@ NEW_VENDOR_RAMDISK="$WORKDIR/vendor_ramdisk.new"
 lz4 -d -c "$NEW_VENDOR_RAMDISK" | cpio -it --quiet >/dev/null
 
 echo '== 4/7: Reading exact stock mkbootimg parameters =='
-format_mkbootimg "$STOCK_BOOT" | tee "$OUTPUT_DIR/stock-boot-mkbootimg.args"
-format_mkbootimg "$STOCK_VENDOR_BOOT" | tee "$OUTPUT_DIR/stock-vendor_boot-mkbootimg.args"
+format_mkbootimg "$STOCK_BOOT" | tee "$OUTPUT/stock-boot-mkbootimg.args"
+format_mkbootimg "$STOCK_VENDOR_BOOT" | tee "$OUTPUT/stock-vendor_boot-mkbootimg.args"
 
-mapfile -d '' -t BOOT_ARGS < <(split_mkbootimg_args < "$OUTPUT_DIR/stock-boot-mkbootimg.args")
-mapfile -d '' -t VENDOR_ARGS < <(split_mkbootimg_args < "$OUTPUT_DIR/stock-vendor_boot-mkbootimg.args")
+mapfile -d '' -t BOOT_ARGS < <(split_mkbootimg_args < "$OUTPUT/stock-boot-mkbootimg.args")
+mapfile -d '' -t VENDOR_ARGS < <(split_mkbootimg_args < "$OUTPUT/stock-vendor_boot-mkbootimg.args")
 
 # unpack_bootimg.py emits '--option value'. Retain all stock parameters except
 # segment paths, then add the new paths below.
@@ -257,7 +247,7 @@ for ((i = 0; i < ${#BOOT_ARGS[@]}; i += 2)); do
         *) filtered_args+=("${BOOT_ARGS[i]}" "${BOOT_ARGS[i + 1]}") ;;
     esac
 done
-filtered_args+=(--kernel "$DIST/Image.lz4-dtb" --ramdisk "$BOOT_UNPACKED/ramdisk" --output "$OUTPUT_DIR/boot.img")
+filtered_args+=(--kernel "$DIST/Image.lz4-dtb" --ramdisk "$BOOT_UNPACKED/ramdisk" --output "$OUTPUT/boot.img")
 python3 "$MKBOOTIMG" "${filtered_args[@]}"
 
 filtered_args=()
@@ -267,25 +257,25 @@ for ((i = 0; i < ${#VENDOR_ARGS[@]}; i += 2)); do
         *) filtered_args+=("${VENDOR_ARGS[i]}" "${VENDOR_ARGS[i + 1]}") ;;
     esac
 done
-filtered_args+=(--dtb "$VENDOR_UNPACKED/dtb" --vendor_ramdisk "$NEW_VENDOR_RAMDISK" --vendor_boot "$OUTPUT_DIR/vendor_boot.img")
+filtered_args+=(--dtb "$VENDOR_UNPACKED/dtb" --vendor_ramdisk "$NEW_VENDOR_RAMDISK" --vendor_boot "$OUTPUT/vendor_boot.img")
 python3 "$MKBOOTIMG" "${filtered_args[@]}"
 
 echo '== 5/7: AVB signing with factory image sizes =='
 BOOT_PARTITION_SIZE="$(stat -c '%s' "$STOCK_BOOT")"
 VENDOR_BOOT_PARTITION_SIZE="$(stat -c '%s' "$STOCK_VENDOR_BOOT")"
-"$AVBTOOL" add_hash_footer --image "$OUTPUT_DIR/boot.img" \
+"$AVBTOOL" add_hash_footer --image "$OUTPUT/boot.img" \
     --partition_name boot --partition_size "$BOOT_PARTITION_SIZE" \
     --key "$AVB_KEY" --algorithm SHA256_RSA2048
-"$AVBTOOL" add_hash_footer --image "$OUTPUT_DIR/vendor_boot.img" \
+"$AVBTOOL" add_hash_footer --image "$OUTPUT/vendor_boot.img" \
     --partition_name vendor_boot --partition_size "$VENDOR_BOOT_PARTITION_SIZE" \
     --key "$AVB_KEY" --algorithm SHA256_RSA2048
 
-"$AVBTOOL" info_image --image "$OUTPUT_DIR/boot.img" > "$OUTPUT_DIR/boot-avb-info.txt"
-"$AVBTOOL" info_image --image "$OUTPUT_DIR/vendor_boot.img" > "$OUTPUT_DIR/vendor_boot-avb-info.txt"
+"$AVBTOOL" info_image --image "$OUTPUT/boot.img" > "$OUTPUT/boot-avb-info.txt"
+"$AVBTOOL" info_image --image "$OUTPUT/vendor_boot.img" > "$OUTPUT/vendor_boot-avb-info.txt"
 
 echo '== 6/7: Extracting final images and performing byte-for-byte checks =='
-python3 "$UNPACK" --boot_img "$OUTPUT_DIR/boot.img" --out "$FINAL_BOOT_UNPACKED"
-python3 "$UNPACK" --boot_img "$OUTPUT_DIR/vendor_boot.img" --out "$FINAL_VENDOR_UNPACKED"
+python3 "$UNPACK" --boot_img "$OUTPUT/boot.img" --out "$FINAL_BOOT_UNPACKED"
+python3 "$UNPACK" --boot_img "$OUTPUT/vendor_boot.img" --out "$FINAL_VENDOR_UNPACKED"
 cmp -s "$FINAL_BOOT_UNPACKED/kernel" "$DIST/Image.lz4-dtb" ||
     die 'kernel in final boot.img does not match current dist/Image.lz4-dtb.'
 cmp -s "$FINAL_BOOT_UNPACKED/ramdisk" "$BOOT_UNPACKED/ramdisk" ||
@@ -312,12 +302,12 @@ for module in "${STOCK_MODULES[@]}"; do
         die "module in final vendor_boot does not match dist: $module"
 done
 
-format_mkbootimg "$OUTPUT_DIR/boot.img" | tee "$OUTPUT_DIR/final-boot-mkbootimg.args"
-format_mkbootimg "$OUTPUT_DIR/vendor_boot.img" | tee "$OUTPUT_DIR/final-vendor_boot-mkbootimg.args"
-verify_mkbootimg_parameters "$OUTPUT_DIR/stock-boot-mkbootimg.args" \
-    "$OUTPUT_DIR/final-boot-mkbootimg.args" 'boot.img'
-verify_mkbootimg_parameters "$OUTPUT_DIR/stock-vendor_boot-mkbootimg.args" \
-    "$OUTPUT_DIR/final-vendor_boot-mkbootimg.args" 'vendor_boot.img'
+format_mkbootimg "$OUTPUT/boot.img" | tee "$OUTPUT/final-boot-mkbootimg.args"
+format_mkbootimg "$OUTPUT/vendor_boot.img" | tee "$OUTPUT/final-vendor_boot-mkbootimg.args"
+verify_mkbootimg_parameters "$OUTPUT/stock-boot-mkbootimg.args" \
+    "$OUTPUT/final-boot-mkbootimg.args" 'boot.img'
+verify_mkbootimg_parameters "$OUTPUT/stock-vendor_boot-mkbootimg.args" \
+    "$OUTPUT/final-vendor_boot-mkbootimg.args" 'vendor_boot.img'
 
 echo '== 7/7: Input evidence =='
 {
@@ -327,7 +317,7 @@ echo '== 7/7: Input evidence =='
     git -C "$ROOT/private/msm-google" status --porcelain -uno 2>/dev/null || true
     echo 'stock_and_output_sha256:'
     sha256sum "$STOCK_BOOT" "$STOCK_VENDOR_BOOT" "$DIST/Image.lz4-dtb" \
-        "$OUTPUT_DIR/boot.img" "$OUTPUT_DIR/vendor_boot.img"
+        "$OUTPUT/boot.img" "$OUTPUT/vendor_boot.img"
     echo "stock_modules_replaced=${#STOCK_MODULES[@]}"
     echo "stock_modules_different_from_current_dist=$MODULES_CHANGED_FROM_STOCK"
     echo "stock_modules_identical_to_current_dist=$MODULES_IDENTICAL_TO_STOCK"
@@ -337,13 +327,13 @@ echo '== 7/7: Input evidence =='
     echo 'vendor_dtb_matches_stock=yes'
     echo 'vendor_non_module_files_match_stock=yes'
     echo 'mkbootimg_parameters_and_cmdlines_match_stock=yes'
-} | tee "$OUTPUT_DIR/proof.txt"
+} | tee "$OUTPUT/proof.txt"
 
-sha256sum "$OUTPUT_DIR/boot.img" "$OUTPUT_DIR/vendor_boot.img" > "$OUTPUT_DIR/checksums.txt"
+sha256sum "$OUTPUT/boot.img" "$OUTPUT/vendor_boot.img" > "$OUTPUT/checksums.txt"
 
 echo
 echo 'DONE: images were built and verified; no flashing was performed.'
-echo "Result: $OUTPUT_DIR"
-echo "  $OUTPUT_DIR/boot.img"
-echo "  $OUTPUT_DIR/vendor_boot.img"
-echo "  $OUTPUT_DIR/proof.txt"
+echo "Result: $OUTPUT"
+echo "  $OUTPUT/boot.img"
+echo "  $OUTPUT/vendor_boot.img"
+echo "  $OUTPUT/proof.txt"
