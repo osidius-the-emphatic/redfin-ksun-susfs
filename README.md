@@ -20,6 +20,21 @@ The exact revisions used by the build are recorded in `config/versions.env`; the
 
 The series includes `susfs-mount-namespace-copy.patch`, which preserves SUSFS mount IDs when an existing mount namespace is copied through `CLONE_NEWNS`.
 
+## Why this workflow uses legacy SuSFS v2
+
+The target is the Pixel 5 Android 14 / Linux 4.19 Google base pinned in
+`config/versions.env`. This workflow uses the separately reviewable v2.2.0
+reference-port adaptation and KernelSU-Next's matching
+`v3.3.0-legacy-susfs-v2` integration ref because the complete patch series is
+maintained and ABI-audited against that exact base. This is a compatibility
+choice, not a claim that another SuSFS branch is inherently less secure.
+
+No migration to another SuSFS line is currently declared. Any such migration
+must be treated as a new integration: pin the candidate sources, rebase every
+patch in `patches/series`, apply them without fuzz, complete a clean build,
+and require a zero-mismatch stock-vendor ABI report before package or device
+testing.
+
 ## Licensing and provenance
 
 Executable material and original integration patches are `GPL-2.0-only`; the

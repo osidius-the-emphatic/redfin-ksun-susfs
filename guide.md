@@ -345,6 +345,12 @@ Do not edit generated source files or replace whole source trees with archives. 
 5. Review the series with `git apply --check` or the build script preparation checks.
 6. Perform a clean build and require a zero-mismatch vendor-module ABI report before packaging.
 
+The current legacy SuSFS v2 integration is a compatibility choice for the
+pinned Pixel 5 Android 14 / Linux 4.19 base, not a general security ranking of
+SuSFS branches. No migration target is declared. Treat a migration as a new
+integration and repeat every check above; do not mix a newer SuSFS tree into
+this series as an unreviewed file replacement.
+
 The manager and embedded KernelSU component are related but may not show identical numeric versions. The proof records the exact KernelSU commit; use that commit, not only a displayed version number, when comparing builds.
 
 ## Why `versions.env` exists
