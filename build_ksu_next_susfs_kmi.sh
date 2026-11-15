@@ -10,6 +10,8 @@ KERNEL_CHECKOUT="${KERNEL_CHECKOUT:-$(pwd -P)}"
 PATCH="$SCRIPT/patches"
 DIST="${DIST:-}"
 STOCK_IMAGES="${STOCK_IMAGES:-}"
+RESET_REPO="${RESET_REPO:-1}"
+SYNC_REPO="${SYNC_REPO:-1}"
 VERSIONS_FILE="$SCRIPT/config/versions.env"
 [[ -f "$VERSIONS_FILE" ]] || die "versions file not found: $VERSIONS_FILE"
 # shellcheck disable=SC1091
@@ -30,6 +32,10 @@ Options:
   --stock-images PATH  directory containing the matching stock vendor.img
                            (default: $KERNEL_CHECKOUT/stock-images)
   --dist PATH           build directory (default: $KERNEL_CHECKOUT/out/android-msm-pixel-4.19/dist)
+  --reset-repo           reset tracked and untracked files in all repo projects (default)
+  --no-reset-repo        preserve current repo project worktrees
+  --sync-repo             run 'repo sync -l -d' after reset (default)
+  --no-sync-repo          do not synchronize repo projects
   -h, --help               show this help
 EOF
 }
@@ -52,6 +58,10 @@ while (($#)); do
       DIST="$2"
       shift 2
       ;;
+    --reset-repo) RESET_REPO=1; shift ;;
+    --no-reset-repo) RESET_REPO=0; shift ;;
+    --sync-repo) SYNC_REPO=1; shift ;;
+    --no-sync-repo) SYNC_REPO=0; shift ;;
     -h|--help)
       usage
       exit 0
@@ -67,6 +77,16 @@ STOCK_IMAGES="${STOCK_IMAGES:-$KERNEL_CHECKOUT/stock-images}"
 DIST="${DIST:-$KERNEL_CHECKOUT/out/android-msm-pixel-4.19/dist}"
 STOCK_VENDOR_IMG="$STOCK_IMAGES/vendor.img"
 [[ -d "$KERNEL/.git" && -x "$ROOT/build/build.sh" ]] || die 'run from the redbull-kernel checkout root.'
+for value_name in RESET_REPO SYNC_REPO; do
+  value="${!value_name}"
+  case "$value" in 0|1) ;; *) die "$value_name must be 0 or 1 (got: $value)" ;; esac
+done
+if [[ "$RESET_REPO" == 1 || "$SYNC_REPO" == 1 ]]; then
+  command -v repo >/dev/null 2>&1 || die 'repo command not found; use --no-reset-repo --no-sync-repo or install repo.'
+  [[ -d "$ROOT/.repo" ]] || die "repo metadata not found: $ROOT/.repo"
+  if [[ "$RESET_REPO" == 1 ]]; then echo '== 0/5: reset repo projects =='; (cd "$ROOT" && repo forall -c 'git reset --hard && git clean -fd'); fi
+  if [[ "$SYNC_REPO" == 1 ]]; then echo '== 0/5: sync repo projects =='; (cd "$ROOT" && repo sync -l -d); fi
+fi
 [[ -f "$KERNEL/build.config.redbull.vintf" ]] || die 'build.config.redbull.vintf not found.'
 [[ -f "$PATCH/series" ]] || die 'patches/series not found.'
 [[ -f "$STOCK_VENDOR_IMG" ]] || die "matching stock vendor.img not found: $STOCK_VENDOR_IMG"

@@ -103,29 +103,19 @@ these commands. Confirm that `private/msm-google`, `build`, and
 
 ### Repeat a build with an existing checkout
 
-After a previous attempt, return the Google `repo` projects to their manifest
-revisions locally before applying the patch series again:
+No manual reset is needed. By default, the builder runs `repo forall -c 'git
+reset --hard && git clean -fd'` and `repo sync -l -d` before applying patches.
+This resets all `repo` projects, including the previous local integration.
+
+Disable either action only when deliberately preserving the current checkout:
 
 ```bash
-cd "$KERNEL_CHECKOUT"
-repo forall -c 'git reset --hard && git clean -fd'
-repo sync -l -d
+bash "$PROJECT/build_ksu_next_susfs_kmi.sh" --no-reset-repo --no-sync-repo
 ```
 
-On success, these commands finish with status `0`. The Google projects are
-then clean and at their manifest revisions; the command may print progress, but
-there is no single required final line. A non-zero status means the reset or
-local synchronization did not complete.
-
-This discards tracked and untracked changes inside the `repo` projects,
-including the previous local KernelSU/SuSFS integration. It does not redownload
-objects; `repo sync -l -d` uses the objects already present locally. If local
-objects are incomplete, run ordinary `repo sync` once to fetch them.
-
-Do not run the reset commands if you need to preserve local kernel changes.
-Instead, keep a separate checkout or save those changes first. The build
-script requires the Google kernel project to be exactly at the pinned base
-commit and refuses tracked changes.
+The reset is destructive. Preserve experiments in another checkout or commit
+them before starting the builder. If the local checkout is incomplete, run
+ordinary `repo sync` once before retrying.
 
 Remove generated output when a clean rebuild is required:
 
@@ -166,7 +156,10 @@ its status. Do not continue to the build until all seven checks succeed.
 
 ## 5. Build KernelSU-Next + SuSFS
 
-This is the long-running step. The script resets `private/msm-google` to the commit pinned in `config/versions.env`, checks out the pinned KernelSU-Next revision, applies the ordered patches, builds with the VINTF configuration, and writes evidence to `dist/`.
+This is the long-running step. The script resets and synchronizes the `repo`
+checkout by default, checks out the pinned KernelSU-Next revision, applies the
+ordered patches, builds with the VINTF configuration, and writes evidence to
+`dist/`.
 
 The resulting kernel release is `4.19.278-ksun-susfs-g<integration-sha>`, where the SHA identifies the one local commit containing the applied integration. It deliberately does not use the uninformative `00001` Git-distance suffix.
 
@@ -370,9 +363,11 @@ file patches/series
 test -f patches/susfs-v2.2.0-redbull.patch
 ```
 
-### The build script refuses a dirty kernel source tree
+### The build script cannot reset or synchronize the checkout
 
-This is intentional. The script must start from the pinned Google base commit. Run section 3, then retry. Do not bypass the check, because the proof would no longer identify a reproducible source state.
+By default, the builder performs the reset and `repo sync -l -d` itself. Check
+that `repo` and the checkout's `.repo` metadata are available. If you need to
+preserve local work, use `--no-reset-repo --no-sync-repo` only deliberately.
 
 ### ABI audit reports a mismatch
 
