@@ -338,13 +338,12 @@ Do not edit generated source files or replace whole source trees with archives. 
 5. Review the series with `git apply --check` or the build script preparation checks.
 6. Perform a clean build and require a zero-mismatch vendor-module ABI report before packaging.
 
-The current legacy SuSFS v2 integration is a compatibility choice for the
-pinned Pixel 5 Android 14 / Linux 4.19 base, not a general security ranking of
-SuSFS branches. No migration target is declared. Treat a migration as a new
-integration and repeat every check above; do not mix a newer SuSFS tree into
-this series as an unreviewed file replacement.
-
-The manager and embedded KernelSU component are related but may not show identical numeric versions. The proof records the exact KernelSU commit; use that commit, not only a displayed version number, when comparing builds.
+The 3.4.2 legacy source deliberately has a different Git commit-count history
+from the regular release branch. The builder uses the upstream legacy Kbuild
+overrides with the pinned `KSUN_VERSION_CODE=33553` and
+`KSUN_VERSION_TAG=v3.4.2`, so the embedded component reports the matching
+Manager compatibility identity. The proof records those values and the exact
+KernelSU commit; use all three when comparing builds.
 
 ## Why `versions.env` exists
 
@@ -363,11 +362,12 @@ file patches/series
 test -f patches/susfs-v2.2.0-redbull.patch
 ```
 
-### The build script cannot reset or synchronize the checkout
+### The build script reports that the pinned Google commit is unavailable
 
-By default, the builder performs the reset and `repo sync -l -d` itself. Check
-that `repo` and the checkout's `.repo` metadata are available. If you need to
-preserve local work, use `--no-reset-repo --no-sync-repo` only deliberately.
+The builder performs the reset and local synchronization automatically. If the
+checkout is incomplete, run ordinary `repo sync` once, then retry. Do not
+change the pinned commit manually: the proof must identify a reproducible source
+state.
 
 ### ABI audit reports a mismatch
 
@@ -375,8 +375,12 @@ Do not package or flash. Save the report, identify the changed exported symbol, 
 
 ### KernelSU Manager and embedded component show different numbers
 
-Record both versions and the proof's source commit. Do not change Kbuild version arithmetic merely to imitate a manager number; verify the expectation for that KernelSU-Next release first.
+Record both versions and the proof's source commit. For the legacy port, change
+only the recorded upstream-supported `KSUN_VERSION_CODE` and
+`KSUN_VERSION_TAG` pins after verifying the matching release; do not alter
+Kbuild arithmetic.
 
 ## Historical notes
 
 The original incompatibility was caused by changed exported-symbol CRCs in the kernel while the Pixel 5 stock `vendor.img` retained modules built against stock CRCs. The KMI approach restores stock-module compatibility without removing SuSFS. A successful audit previously checked 111 stock vendor modules and found zero CRC mismatches and zero missing kernel symbols.
+

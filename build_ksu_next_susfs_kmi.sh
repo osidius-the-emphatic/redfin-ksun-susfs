@@ -19,7 +19,9 @@ source "$VERSIONS_FILE"
 KSU_REF="${KSUN_REF:?KSUN_REF is not set}"
 KSU_EXPECTED_COMMIT="${KSUN_EXPECTED_COMMIT:?KSUN_EXPECTED_COMMIT is not set}"
 GOOGLE_BASE_COMMIT="${GOOGLE_BASE_COMMIT:?GOOGLE_BASE_COMMIT is not set}"
-KSU_URL="https://github.com/sidex15/KernelSU-Next.git"
+KSU_URL="${KSUN_REPO:?KSUN_REPO is not set}"
+KSU_VERSION_CODE="${KSUN_VERSION_CODE:?KSUN_VERSION_CODE is not set}"
+KSU_VERSION_TAG="${KSUN_VERSION_TAG:?KSUN_VERSION_TAG is not set}"
 LOCAL_BRANCH="redbull-ksu-susfs-kmi"
 
 usage() {
@@ -87,42 +89,51 @@ if [[ "$RESET_REPO" == 1 || "$SYNC_REPO" == 1 ]]; then
   if [[ "$RESET_REPO" == 1 ]]; then echo '== 0/5: reset repo projects =='; (cd "$ROOT" && repo forall -c 'git reset --hard && git clean -fd'); fi
   if [[ "$SYNC_REPO" == 1 ]]; then echo '== 0/5: sync repo projects =='; (cd "$ROOT" && repo sync -l -d); fi
 fi
+[[ "$KSU_VERSION_CODE" =~ ^[0-9]+$ ]] || die "KSUN_VERSION_CODE must be numeric: $KSU_VERSION_CODE"
+[[ "$KSU_VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "KSUN_VERSION_TAG must be a release tag: $KSU_VERSION_TAG"
 [[ -f "$KERNEL/build.config.redbull.vintf" ]] || die 'build.config.redbull.vintf not found.'
 [[ -f "$PATCH/series" ]] || die 'patches/series not found.'
 [[ -f "$STOCK_VENDOR_IMG" ]] || die "matching stock vendor.img not found: $STOCK_VENDOR_IMG"
+git -C "$KERNEL" cat-file -e "$GOOGLE_BASE_COMMIT^{commit}" \
+  || die "pinned Google base commit is unavailable locally: $GOOGLE_BASE_COMMIT; run repo sync once."
+
+echo '== 0/5: reset pinned Google kernel source =='
+git -C "$KERNEL" reset --hard "$GOOGLE_BASE_COMMIT"
+git -C "$KERNEL" clean -fd
 GOOGLE_HEAD="$(git -C "$KERNEL" rev-parse HEAD)"
-[[ "$GOOGLE_HEAD" == "$GOOGLE_BASE_COMMIT" ]] || die "unexpected Google base commit: $GOOGLE_HEAD"
+[[ "$GOOGLE_HEAD" == "$GOOGLE_BASE_COMMIT" ]] || die "failed to reset Google base commit: $GOOGLE_HEAD"
 while IFS= read -r patch_name; do
   patch_name="${patch_name%$'\r'}"
   [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
   [[ -f "$PATCH/$patch_name" ]] || die "patch not found: $patch_name"
 done < "$PATCH/series"
-if ! git -C "$KERNEL" diff --quiet || ! git -C "$KERNEL" diff --cached --quiet; then
-  git -C "$KERNEL" status -uno --short >&2
-  die 'the Google tree has tracked changes; run repo reset/sync first.'
-fi
 SECCOMP_STOCK_SHA="$(sha256sum "$KERNEL/include/linux/seccomp.h" | awk '{print $1}')"
 
 echo '== 1/5: pinned KernelSU-Next =='
 if [[ -e "$KSU" && ! -d "$KSU/.git" ]]; then die "$KSU exists but is not a Git clone."; fi
-[[ -d "$KSU/.git" ]] || git clone "$KSU_URL" "$KSU"
-git -C "$KSU" fetch --tags origin "refs/tags/$KSU_REF:refs/tags/$KSU_REF"
+if [[ -d "$KSU/.git" ]]; then
+  git -C "$KSU" remote set-url origin "$KSU_URL"
+else
+  git clone "$KSU_URL" "$KSU"
+fi
+git -C "$KSU" fetch --tags origin "$KSU_REF"
 if [[ "$(git -C "$KSU" rev-parse --is-shallow-repository)" == true ]]; then
   git -C "$KSU" fetch --unshallow origin
 fi
 git -C "$KSU" reset --hard
 git -C "$KSU" clean -fdx
-git -C "$KSU" checkout --detach "$KSU_REF"
+git -C "$KSU" checkout --detach "$KSU_EXPECTED_COMMIT"
 KSU_HEAD="$(git -C "$KSU" rev-parse HEAD)"
 [[ "$KSU_HEAD" == "$KSU_EXPECTED_COMMIT" ]] || die "unexpected KSU commit: $KSU_HEAD"
 rm -f "$KERNEL/drivers/kernelsu"
 ln -s "../KernelSU-Next/kernel" "$KERNEL/drivers/kernelsu"
 grep -q 'obj-\$(CONFIG_KSU) += kernelsu/' "$KERNEL/drivers/Makefile" || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$KERNEL/drivers/Makefile"
 grep -q 'source "drivers/kernelsu/Kconfig"' "$KERNEL/drivers/Kconfig" || sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "$KERNEL/drivers/Kconfig"
-grep -Eq '^config[[:space:]]+KSU_SUSFS$' "$KERNEL/drivers/kernelsu/Kconfig" || die 'the KSU tag does not contain KSU_SUSFS.'
 
 echo '== 2/5: KSU compatibility patch =='
 patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-disable-seccomp-filter-count.patch" || die 'the KSU seccomp patch failed.'
+patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-legacy-susfs-v2.2.patch" || die 'the KSU legacy SuSFS v2.2 patch failed.'
+grep -Eq '^config[[:space:]]+KSU_SUSFS$' "$KERNEL/drivers/kernelsu/Kconfig" || die 'the KSU legacy patch did not add KSU_SUSFS.'
 
 echo '== 3/5: strict kernel patch series =='
 while IFS= read -r patch_name; do
@@ -155,6 +166,7 @@ printf '%s\n' "-ksun-susfs-g$INTEGRATION_SHA" > "$KERNEL/.scmversion"
 echo '== 5/5: VINTF kernel build =='
 (
   cd "$ROOT"
+  KSU_VERSION_OVERRIDE="$KSU_VERSION_CODE" KSU_VERSION_TAG_OVERRIDE="$KSU_VERSION_TAG" \
   SKIP_MRPROPER=1 BUILD_CONFIG=private/msm-google/build.config.redbull.vintf \
     "$ROOT/build/build.sh"
 )
@@ -191,11 +203,14 @@ bash "$SCRIPT/tools/verify_stock_vendor_module_abi.sh" \
 PROOF="$DIST/ksu-next-susfs-build-proof.txt"
 {
   echo "google_base_commit=$GOOGLE_BASE_COMMIT"
+  echo "ksun_repo=$KSU_URL"
   echo "ksun_ref=$KSU_REF"
   echo "ksun_commit=$KSU_HEAD"
   echo "kernel_release=$KERNEL_RELEASE"
   echo "ksun_rev_count=$(git -C "$KSU" rev-list --count HEAD)"
-  echo "ksun_version_code=$(expr 30000 + $(git -C "$KSU" rev-list --count HEAD) + 200)"
+  echo "ksun_version_code=$KSU_VERSION_CODE"
+  echo "ksun_version_tag=$KSU_VERSION_TAG"
+  echo "ksun_legacy_commit_count=$(git -C "$KSU" rev-list --count HEAD)"
   echo "seccomp_stock_sha256=$SECCOMP_STOCK_SHA"
   echo "seccomp_post_build_sha256=$SECCOMP_POST_SHA"
   echo "final_config_sha256=$(sha256sum "$FINAL_CONFIG" | awk '{print $1}')"
@@ -207,3 +222,4 @@ echo 'Build completed. Packaging and flashing are separate operations.'
 echo "KSU tag: $KSU_REF ($KSU_HEAD)"
 echo "Patch series: $PATCH/series"
 echo "Proof: $PROOF"
+

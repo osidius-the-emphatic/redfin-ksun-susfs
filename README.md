@@ -13,27 +13,12 @@ KernelSU-Next and SuSFS are maintained as separate patch groups. Upstream revisi
 ## Upstream sources
 
 - **Google kernel:** [android.googlesource.com/kernel/msm](https://android.googlesource.com/kernel/msm), branch `android-msm-redbull-4.19-android14`, base commit `7b0944645172e8b690d42f68c8973ccb0ca45730`. A GitHub mirror is available at [aosp-mirror/kernel_msm](https://github.com/aosp-mirror/kernel_msm).
-- **KernelSU-Next:** [sidex15/KernelSU-Next](https://github.com/sidex15/KernelSU-Next), ref `v3.3.0-legacy-susfs-v2`, commit [`36679224f26d03f2bb105c4686cf390eb63178c2`](https://github.com/sidex15/KernelSU-Next/commit/36679224f26d03f2bb105c4686cf390eb63178c2).
+- **KernelSU-Next:** upstream [`legacy`](https://github.com/KernelSU-Next/KernelSU-Next/tree/legacy), which carries the KernelSU 3.4.2 backports for older kernels, commit [`465490a26667ba4cf00b3be975a7e28e53978829`](https://github.com/KernelSU-Next/KernelSU-Next/commit/465490a26667ba4cf00b3be975a7e28e53978829). The separate `patches/ksun-legacy-susfs-v2.2.patch` supplies only the built-in SuSFS v2.2 bridge; it does not include SuSFS LKM code.
 - **SuSFS v2.2.0 reference port:** [sreeshankark/android_kernel_oneplus_avicii](https://github.com/sreeshankark/android_kernel_oneplus_avicii), branch `14`, commit [`3f46c998`](https://github.com/sreeshankark/android_kernel_oneplus_avicii/commit/3f46c998). The Pixel 5 adaptation is recorded in `patches/susfs-v2.2.0-redbull.patch`; the build does not clone a separate SuSFS tree.
 
 The exact revisions used by the build are recorded in `config/versions.env`; the patch files in this repository are the reviewable integration layer between those sources and the Pixel 5 kernel tree.
 
 The series includes `susfs-mount-namespace-copy.patch`, which preserves SUSFS mount IDs when an existing mount namespace is copied through `CLONE_NEWNS`.
-
-## Why this workflow uses legacy SuSFS v2
-
-The target is the Pixel 5 Android 14 / Linux 4.19 Google base pinned in
-`config/versions.env`. This workflow uses the separately reviewable v2.2.0
-reference-port adaptation and KernelSU-Next's matching
-`v3.3.0-legacy-susfs-v2` integration ref because the complete patch series is
-maintained and ABI-audited against that exact base. This is a compatibility
-choice, not a claim that another SuSFS branch is inherently less secure.
-
-No migration to another SuSFS line is currently declared. Any such migration
-must be treated as a new integration: pin the candidate sources, rebase every
-patch in `patches/series`, apply them without fuzz, complete a clean build,
-and require a zero-mismatch stock-vendor ABI report before package or device
-testing.
 
 ## Licensing and provenance
 
@@ -72,3 +57,4 @@ Neither script flashes a device. Flashing is a separate, manual step using the g
 5. Inspect the package and flash the generated images manually if desired.
 
 See [guide.md](guide.md) for the complete build, packaging, flashing, verification, recovery, and update instructions.
+

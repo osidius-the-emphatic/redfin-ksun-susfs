@@ -13,27 +13,12 @@ KernelSU-Next і SuSFS підтримуються окремими групам�
 ## Upstream-джерела
 
 - **Ядро Google:** [android.googlesource.com/kernel/msm](https://android.googlesource.com/kernel/msm), гілка `android-msm-redbull-4.19-android14`, базовий коміт `7b0944645172e8b690d42f68c8973ccb0ca45730`. GitHub-дзеркало доступне в [aosp-mirror/kernel_msm](https://github.com/aosp-mirror/kernel_msm).
-- **KernelSU-Next:** [sidex15/KernelSU-Next](https://github.com/sidex15/KernelSU-Next), ref `v3.3.0-legacy-susfs-v2`, коміт [`36679224f26d03f2bb105c4686cf390eb63178c2`](https://github.com/sidex15/KernelSU-Next/commit/36679224f26d03f2bb105c4686cf390eb63178c2).
+- **KernelSU-Next:** upstream [`legacy`](https://github.com/KernelSU-Next/KernelSU-Next/tree/legacy), який містить бекпорти KernelSU 3.4.2 для старих ядер, коміт [`465490a26667ba4cf00b3be975a7e28e53978829`](https://github.com/KernelSU-Next/KernelSU-Next/commit/465490a26667ba4cf00b3be975a7e28e53978829). Окремий `patches/ksun-legacy-susfs-v2.2.patch` додає лише місток вбудованого SuSFS v2.2; коду SuSFS LKM у ньому немає.
 - **Референсний порт SuSFS v2.2.0:** [sreeshankark/android_kernel_oneplus_avicii](https://github.com/sreeshankark/android_kernel_oneplus_avicii), гілка `14`, коміт [`3f46c998`](https://github.com/sreeshankark/android_kernel_oneplus_avicii/commit/3f46c998). Адаптація для Pixel 5 зафіксована в `patches/susfs-v2.2.0-redbull.patch`; під час збірки окреме дерево SuSFS не клонується.
 
 Точні ревізії, які використовує збірка, записані в `config/versions.env`; файли патчів у цьому репозиторії є перевірюваним шаром інтеграції між цими джерелами та деревом ядра Pixel 5.
 
 Серія також містить `susfs-mount-namespace-copy.patch`, який зберігає SUSFS mount ID під час копіювання наявного mount namespace через `CLONE_NEWNS`.
-
-## Чому цей процес використовує legacy SuSFS v2
-
-Ціллю є база Google Android 14 / Linux 4.19 для Pixel 5, закріплена у
-`config/versions.env`. Процес використовує окремо перевірювану адаптацію
-референсного порту v2.2.0 і відповідний ref інтеграції KernelSU-Next
-`v3.3.0-legacy-susfs-v2`, бо повна серія патчів підтримується та ABI-перевіряється
-саме для цієї бази. Це вибір сумісності, а не твердження, що інша гілка SuSFS
-за своєю природою менш безпечна.
-
-Міграцію на іншу лінію SuSFS наразі не оголошено. Таку міграцію слід вважати
-новою інтеграцією: закріпити кандидатні вихідні тексти, перебазувати кожен
-патч з `patches/series`, застосувати їх без fuzz, виконати чисте збирання й
-вимагати ABI-звіт стокового vendor без розбіжностей перед пакуванням або
-тестуванням на пристрої.
 
 ## Ліцензія та походження
 
@@ -73,3 +58,4 @@ KernelSU-Next і SuSFS підтримуються окремими групам�
 5. Перевірте пакет і, за потреби, вручну прошийте створені образи.
 
 Повна інструкція зі збирання, пакування, прошивання, перевірки, відновлення та оновлення наведена в [guide.uk.md](guide.uk.md).
+
