@@ -340,10 +340,11 @@ Do not edit generated source files or replace whole source trees with archives. 
 
 The 3.4.2 legacy source deliberately has a different Git commit-count history
 from the regular release branch. The builder uses the upstream legacy Kbuild
-overrides with the pinned `KSUN_VERSION_CODE=33553` and
+overrides with the pinned `KSUN_VERSION_CODE=33355` and
 `KSUN_VERSION_TAG=v3.4.2`, so the embedded component reports the matching
-Manager compatibility identity. The proof records those values and the exact
-KernelSU commit; use all three when comparing builds.
+stable-release identity. Its UAPI is 5, which matches the official v3.4.2
+Manager. Do not use a later nightly Manager such as
+`v3.4.2-198-g7ccf147 (33553-6)`: its UAPI 6 is newer than this target.
 
 ## Why `versions.env` exists
 
