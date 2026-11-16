@@ -20,8 +20,6 @@ KSU_REF="${KSUN_REF:?KSUN_REF is not set}"
 KSU_EXPECTED_COMMIT="${KSUN_EXPECTED_COMMIT:?KSUN_EXPECTED_COMMIT is not set}"
 GOOGLE_BASE_COMMIT="${GOOGLE_BASE_COMMIT:?GOOGLE_BASE_COMMIT is not set}"
 KSU_URL="${KSUN_REPO:?KSUN_REPO is not set}"
-KSU_VERSION_CODE="${KSUN_VERSION_CODE:?KSUN_VERSION_CODE is not set}"
-KSU_VERSION_TAG="${KSUN_VERSION_TAG:?KSUN_VERSION_TAG is not set}"
 LOCAL_BRANCH="redbull-ksu-susfs-kmi"
 
 usage() {
@@ -89,8 +87,6 @@ if [[ "$RESET_REPO" == 1 || "$SYNC_REPO" == 1 ]]; then
   if [[ "$RESET_REPO" == 1 ]]; then echo '== 0/5: reset repo projects =='; (cd "$ROOT" && repo forall -c 'git reset --hard && git clean -fd'); fi
   if [[ "$SYNC_REPO" == 1 ]]; then echo '== 0/5: sync repo projects =='; (cd "$ROOT" && repo sync -l -d); fi
 fi
-[[ "$KSU_VERSION_CODE" =~ ^[0-9]+$ ]] || die "KSUN_VERSION_CODE must be numeric: $KSU_VERSION_CODE"
-[[ "$KSU_VERSION_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "KSUN_VERSION_TAG must be a release tag: $KSU_VERSION_TAG"
 [[ -f "$KERNEL/build.config.redbull.vintf" ]] || die 'build.config.redbull.vintf not found.'
 [[ -f "$PATCH/series" ]] || die 'patches/series not found.'
 [[ -f "$STOCK_VENDOR_IMG" ]] || die "matching stock vendor.img not found: $STOCK_VENDOR_IMG"
@@ -166,7 +162,6 @@ printf '%s\n' "-ksun-susfs-g$INTEGRATION_SHA" > "$KERNEL/.scmversion"
 echo '== 5/5: VINTF kernel build =='
 (
   cd "$ROOT"
-  KSU_VERSION_OVERRIDE="$KSU_VERSION_CODE" KSU_VERSION_TAG_OVERRIDE="$KSU_VERSION_TAG" \
   SKIP_MRPROPER=1 BUILD_CONFIG=private/msm-google/build.config.redbull.vintf \
     "$ROOT/build/build.sh"
 )
@@ -208,9 +203,7 @@ PROOF="$DIST/ksu-next-susfs-build-proof.txt"
   echo "ksun_commit=$KSU_HEAD"
   echo "kernel_release=$KERNEL_RELEASE"
   echo "ksun_rev_count=$(git -C "$KSU" rev-list --count HEAD)"
-  echo "ksun_version_code=$KSU_VERSION_CODE"
-  echo "ksun_version_tag=$KSU_VERSION_TAG"
-  echo "ksun_legacy_commit_count=$(git -C "$KSU" rev-list --count HEAD)"
+  echo "ksun_version_code=$(expr 30000 + $(git -C "$KSU" rev-list --count HEAD) + 289)"
   echo "seccomp_stock_sha256=$SECCOMP_STOCK_SHA"
   echo "seccomp_post_build_sha256=$SECCOMP_POST_SHA"
   echo "final_config_sha256=$(sha256sum "$FINAL_CONFIG" | awk '{print $1}')"

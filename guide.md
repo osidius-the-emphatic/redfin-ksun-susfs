@@ -338,13 +338,13 @@ Do not edit generated source files or replace whole source trees with archives. 
 5. Review the series with `git apply --check` or the build script preparation checks.
 6. Perform a clean build and require a zero-mismatch vendor-module ABI report before packaging.
 
-The 3.4.2 legacy source deliberately has a different Git commit-count history
-from the regular release branch. The builder uses the upstream legacy Kbuild
-overrides with the pinned `KSUN_VERSION_CODE=33355` and
-`KSUN_VERSION_TAG=v3.4.2`, so the embedded component reports the matching
-stable-release identity. Its UAPI is 5, which matches the official v3.4.2
-Manager. Do not use a later nightly Manager such as
-`v3.4.2-198-g7ccf147 (33553-6)`: its UAPI 6 is newer than this target.
+The legacy source has a different Git commit-count history from the regular
+release branch. The builder intentionally retains its upstream-reported
+legacy version instead of overriding it to a release label: an override would
+change only presentation, not port additional driver code. Its UAPI is 5,
+which matches the official stable v3.4.2 Manager. Do not use a later nightly
+Manager such as `v3.4.2-198-g7ccf147 (33553-6)`: its UAPI 6 is newer than this
+target.
 
 ## Why `versions.env` exists
 
@@ -376,12 +376,15 @@ Do not package or flash. Save the report, identify the changed exported symbol, 
 
 ### KernelSU Manager and embedded component show different numbers
 
-Record both versions and the proof's source commit. For the legacy port, change
-only the recorded upstream-supported `KSUN_VERSION_CODE` and
-`KSUN_VERSION_TAG` pins after verifying the matching release; do not alter
-Kbuild arithmetic.
+Record both versions and the proof's source commit. Do not override Kbuild's
+reported version to imitate a release number unless the corresponding driver
+port is actually present.
 
 ## Historical notes
 
 The original incompatibility was caused by changed exported-symbol CRCs in the kernel while the Pixel 5 stock `vendor.img` retained modules built against stock CRCs. The KMI approach restores stock-module compatibility without removing SuSFS. A successful audit previously checked 111 stock vendor modules and found zero CRC mismatches and zero missing kernel symbols.
+
+For detailed working history and investigation notes, see
+[HANDOFF-context.md](HANDOFF-context.md). It is not required to execute this
+procedure.
 
