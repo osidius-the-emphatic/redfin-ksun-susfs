@@ -339,6 +339,11 @@ The manual `fs/exec.c` hook is bridged to the official v3.4.2
 sucompat handler. The patch passes `git apply --check` on a clean v3.4.2 tree;
 only a real redfin compile can validate compiler and linker compatibility.
 
+If `check_defconfig` reports that `savedefconfig` removed
+`CONFIG_KSU_MANUAL_HOOK=y`, do not add it back: this symbol has `default y` in
+the KSU Kconfig. The redfin defconfig patch should keep the explicit
+`CONFIG_KPROBES=y` addition only.
+
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 
 1. Change the KernelSU-Next ref and commit in `config/versions.env`.
