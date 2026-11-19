@@ -334,6 +334,10 @@ applies `patches/ksun-v342-redfin-port.patch`. This focused patch keeps the
 official driver sources and adds only the manual-hook/legacy-kernel bridge plus
 the built-in SuSFS v2.2 integration. It applies with `patch --fuzz=0`; no
 kernel build has been run for this branch yet.
+The manual `fs/exec.c` hook is bridged to the official v3.4.2
+`ksu_handle_execveat_ksud(path, argv)` runtime API and then to the 4.19
+sucompat handler. The patch passes `git apply --check` on a clean v3.4.2 tree;
+only a real redfin compile can validate compiler and linker compatibility.
 
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 

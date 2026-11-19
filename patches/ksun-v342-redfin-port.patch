@@ -458,7 +458,7 @@ diff --git a/kernel/core/init.c b/kernel/core/init.c
 index 87a17ef0..049ae1c4 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
-@@ -12,16 +12,17 @@
+@@ -12,16 +12,34 @@
  #include "klog.h" // IWYU pragma: keep
  #include "manager/manager_observer.h"
  #include "manager/throne_tracker.h"
@@ -470,6 +470,23 @@ index 87a17ef0..049ae1c4 100644
  #include "supercall/supercall.h"
  #include "ksu.h"
  #include "infra/file_wrapper.h"
++/* The manual redfin execve hook uses the 4.19 kernel's user_arg_ptr.  KSUN
++ * keeps a private, layout-compatible copy in ksud_integration.c, so only an
++ * opaque forward declaration is needed at this call boundary. */
++struct user_arg_ptr;
++extern void ksu_handle_execveat_ksud(const char *path,
++				     struct user_arg_ptr *argv);
++extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
++					void *argv, void *envp, int *flags);
++
++int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
++			void *envp, int *flags)
++{
++	if (filename_ptr && *filename_ptr && !IS_ERR(*filename_ptr))
++		ksu_handle_execveat_ksud((*filename_ptr)->name,
++					 (struct user_arg_ptr *)argv);
++	return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp, flags);
++}
  #include "selinux/selinux.h"
 -#include "hook/syscall_hook.h"
  #include "feature/adb_root.h"
