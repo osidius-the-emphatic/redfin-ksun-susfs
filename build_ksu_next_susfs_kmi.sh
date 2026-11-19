@@ -127,9 +127,8 @@ grep -q 'obj-\$(CONFIG_KSU) += kernelsu/' "$KERNEL/drivers/Makefile" || printf '
 grep -q 'source "drivers/kernelsu/Kconfig"' "$KERNEL/drivers/Kconfig" || sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "$KERNEL/drivers/Kconfig"
 
 echo '== 2/5: KSU compatibility patch =='
-patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-disable-seccomp-filter-count.patch" || die 'the KSU seccomp patch failed.'
-patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-legacy-susfs-v2.2.patch" || die 'the KSU legacy SuSFS v2.2 patch failed.'
-grep -Eq '^config[[:space:]]+KSU_SUSFS$' "$KERNEL/drivers/kernelsu/Kconfig" || die 'the KSU legacy patch did not add KSU_SUSFS.'
+patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-v342-redfin-port.patch" || die 'the official v3.4.2 redfin compatibility patch failed.'
+grep -Eq '^config[[:space:]]+KSU_SUSFS$' "$KERNEL/drivers/kernelsu/Kconfig" || die 'the v3.4.2 redfin port did not add KSU_SUSFS.'
 
 echo '== 3/5: strict kernel patch series =='
 while IFS= read -r patch_name; do
@@ -203,7 +202,7 @@ PROOF="$DIST/ksu-next-susfs-build-proof.txt"
   echo "ksun_commit=$KSU_HEAD"
   echo "kernel_release=$KERNEL_RELEASE"
   echo "ksun_rev_count=$(git -C "$KSU" rev-list --count HEAD)"
-  echo "ksun_version_code=$(expr 30000 + $(git -C "$KSU" rev-list --count HEAD) + 289)"
+  echo "ksun_version_code=$(expr 30000 + $(git -C "$KSU" rev-list --count HEAD))"
   echo "seccomp_stock_sha256=$SECCOMP_STOCK_SHA"
   echo "seccomp_post_build_sha256=$SECCOMP_POST_SHA"
   echo "final_config_sha256=$(sha256sum "$FINAL_CONFIG" | awk '{print $1}')"
@@ -215,4 +214,3 @@ echo 'Build completed. Packaging and flashing are separate operations.'
 echo "KSU tag: $KSU_REF ($KSU_HEAD)"
 echo "Patch series: $PATCH/series"
 echo "Proof: $PROOF"
-

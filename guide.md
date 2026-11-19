@@ -329,6 +329,12 @@ For the A/B device, inspect the active slot first with `fastboot getvar current-
 
 ## Updating KernelSU-Next or SuSFS
 
+The `ksun-3.4.2-susfs-2.2` branch pins official KernelSU-Next `v3.4.2` and
+applies `patches/ksun-v342-redfin-port.patch`. This focused patch keeps the
+official driver sources and adds only the manual-hook/legacy-kernel bridge plus
+the built-in SuSFS v2.2 integration. It applies with `patch --fuzz=0`; no
+kernel build has been run for this branch yet.
+
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 
 1. Change the KernelSU-Next ref and commit in `config/versions.env`.
