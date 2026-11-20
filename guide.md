@@ -6,6 +6,11 @@ This is the reproducible workflow for the Pixel 5 (`redfin`) Android 14 kernel i
 
 The scripts prepare the source tree and create images. They do **not** flash the phone. Run the build and package commands yourself; both can take time.
 
+The current `ksun-3.4.2-susfs-2.2` branch uses the official KernelSU-Next
+v3.4.2 source with a focused 4.19 compatibility patch and built-in SuSFS
+v2.2.0. The latest patch-only validation is clean; a full kernel compile is
+still required before packaging or flashing this branch.
+
 ## Scope and assumptions
 
 - Device: Google Pixel 5 (`redfin`).
