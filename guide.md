@@ -139,6 +139,12 @@ The reset is destructive. Preserve experiments in another checkout or commit
 them before starting the builder. If the local checkout is incomplete, run
 ordinary `repo sync` once before retrying.
 
+The builder also repairs one narrow interrupted-build artifact automatically:
+if `out/android-msm-pixel-4.19/private/msm-google/Makefile` exists but is
+zero bytes, it removes only that generated wrapper before Kbuild starts. The
+next config target recreates it. Do not remove the whole `out/` directory for
+this condition.
+
 Remove generated output when a clean rebuild is required:
 
 ```bash

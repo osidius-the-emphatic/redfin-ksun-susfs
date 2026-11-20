@@ -163,6 +163,17 @@ KERNEL_RELEASE="$KERNEL_VERSION-ksun-susfs-g$INTEGRATION_SHA"
 printf '%s\n' "-ksun-susfs-g$INTEGRATION_SHA" > "$KERNEL/.scmversion"
 
 echo '== 5/5: VINTF kernel build =='
+OUTPUT_KERNEL_DIR="$ROOT/out/android-msm-pixel-4.19/private/msm-google"
+OUTPUT_MAKEFILE="$OUTPUT_KERNEL_DIR/Makefile"
+# A previously interrupted out-of-tree Kbuild setup can leave a zero-byte
+# generated wrapper Makefile. The upstream mkmakefile script deliberately
+# preserves any readable file at that path, which makes later *config targets
+# fail with "No rule to make target". A zero-byte wrapper has no useful state
+# and is safe to remove; the first Kbuild config target recreates it.
+if [[ -e "$OUTPUT_MAKEFILE" && ! -s "$OUTPUT_MAKEFILE" ]]; then
+  echo '== 5/5: remove stale zero-byte output Makefile =='
+  rm -f "$OUTPUT_MAKEFILE"
+fi
 (
   cd "$ROOT"
   SKIP_MRPROPER=1 BUILD_CONFIG=private/msm-google/build.config.redbull.vintf \
