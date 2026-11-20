@@ -3035,6 +3035,32 @@ index 670918fa..893c0f47 100644
  };
  
  static int add_mark_on_inode(struct inode *inode, u32 mask,
+diff --git a/kernel/policy/allowlist.c b/kernel/policy/allowlist.c
+index fbb32376..2a15f16e 100644
+--- a/kernel/policy/allowlist.c
++++ b/kernel/policy/allowlist.c
+@@ -3,6 +3,7 @@
+ #include <linux/rculist.h>
+ #include <linux/mutex.h>
+ #include <linux/task_work.h>
++#include <linux/sched/task.h>
+ #include <linux/capability.h>
+ #include <linux/compiler.h>
+ #include <linux/fs.h>
+@@ -16,8 +17,13 @@
+ #include <linux/hashtable.h>
+ #include <linux/kref.h>
+ 
++#ifndef fallthrough
++#define fallthrough do { } while (0)
++#endif
++
+ #include "klog.h" // IWYU pragma: keep
+ #include "ksu.h"
++#include "compat/kernel_compat.h"
+ #include "runtime/ksud_boot.h"
+ #include "selinux/selinux.h"
+ #include "policy/allowlist.h"
 diff --git a/kernel/policy/app_profile.c b/kernel/policy/app_profile.c
 index 6336a222..8991b2fc 100644
 --- a/kernel/policy/app_profile.c
