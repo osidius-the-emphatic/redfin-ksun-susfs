@@ -72,6 +72,23 @@ These are example locations, not fixed requirements. `KERNEL_CHECKOUT` is only
 needed when launching from another directory; otherwise the current directory
 is used. `PROJECT` may be any directory containing this repository.
 
+When copying a maintained project worktree from the Windows filesystem into the
+WSL build copy, use content comparison. Timestamp and size alone can coincide
+for different files across the Windows/WSL boundary:
+
+```bash
+rsync -a --checksum --delete \
+  --exclude=.git --exclude=out/ --exclude=stock-images/ --exclude=repacked-images/ \
+  /mnt/d/path/to/project/ "$PROJECT/"
+```
+
+Verify the copied patch hash before a retry when diagnosing a compatibility
+build:
+
+```bash
+sha256sum "$PROJECT/patches/ksun-v342-redfin-port.patch"
+```
+
 The shared script inputs are:
 
 | Input | Default | Override |

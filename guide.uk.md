@@ -72,6 +72,23 @@ cd "$KERNEL_CHECKOUT"
 лише для запуску з іншого каталогу; без нього використовується поточний
 каталог. `PROJECT` може бути будь-яким каталогом із цим GitHub-репозиторієм.
 
+Коли підтримувана worktree проєкту копіюється з файлової системи Windows до
+WSL-копії для збірки, використовуйте порівняння вмісту. Лише timestamp і розмір
+можуть збігтися для різних файлів на межі Windows/WSL:
+
+```bash
+rsync -a --checksum --delete \
+  --exclude=.git --exclude=out/ --exclude=stock-images/ --exclude=repacked-images/ \
+  /mnt/d/path/to/project/ "$PROJECT/"
+```
+
+Перед повторним запуском compatibility-збірки перевіряйте хеш скопійованого
+патча:
+
+```bash
+sha256sum "$PROJECT/patches/ksun-v342-redfin-port.patch"
+```
+
 | Вхідне значення | Значення за замовчуванням | Одноразова зміна |
 | --- | --- | --- |
 | `KERNEL_CHECKOUT` | Поточний каталог | `--kernel-checkout PATH` |
