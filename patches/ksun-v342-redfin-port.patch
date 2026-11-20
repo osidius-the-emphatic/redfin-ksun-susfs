@@ -1,5 +1,5 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index c32fa7cd..cde0f42c 100644
+index c32fa7cd..13415c31 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -1,25 +1,14 @@
@@ -31,7 +31,7 @@ index c32fa7cd..cde0f42c 100644
  kernelsu-objs += extras.o
  
  kernelsu-objs += infra/file_wrapper.o
-@@ -162,4 +151,13 @@ ccflags-y += -DKSU_NEW_DCACHE_FLUSH=$(KSU_NEW_DCACHE_FLUSH)
+@@ -162,4 +151,55 @@ ccflags-y += -DKSU_NEW_DCACHE_FLUSH=$(KSU_NEW_DCACHE_FLUSH)
  ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-missing-prototypes -Wno-missing-declarations
  ccflags-y += -Wno-declaration-after-statement -Wno-unused-function -Wno-unused-variable
  
@@ -42,6 +42,48 @@ index c32fa7cd..cde0f42c 100644
 +else
 +$(error -- KernelSU-Next: CONFIG_KSU_SUSFS requires the built-in SuSFS VFS patch)
 +endif
++endif
++
++# Backport the path-based unmount helper required by built-in SuSFS on 4.19.
++ifneq ($(shell grep -Eq "^static int can_umount" $(srctree)/fs/namespace.c; echo $$?),0)
++CAN_UMOUNT = static int can_umount(const struct path *path, int flags)\n\
++{\n\t\
++        struct mount *mnt = real_mount(path->mnt);\n\t\
++        if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))\n\t\
++                return -EINVAL;\n\t\
++        if (!may_mount())\n\t\
++                return -EPERM;\n\t\
++        if (path->dentry != path->mnt->mnt_root)\n\t\
++                return -EINVAL;\n\t\
++        if (!check_mnt(mnt))\n\t\
++                return -EINVAL;\n\t\
++        if (mnt->mnt.mnt_flags & MNT_LOCKED)\n\t\
++                return -EINVAL;\n\t\
++        if (flags & MNT_FORCE && !capable(CAP_SYS_ADMIN))\n\t\
++                return -EPERM;\n\t\
++        return 0;\n\
++}\n
++$(shell sed -i '/^static bool is_mnt_ns_file/i $(CAN_UMOUNT)' $(srctree)/fs/namespace.c)
++endif
++
++ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/namespace.c; echo $$?),0)
++$(info -- KernelSU-Next: adding path_umount() compatibility helper)
++PATH_UMOUNT = int path_umount(struct path *path, int flags)\n\
++{\n\t\
++        struct mount *mnt = real_mount(path->mnt);\n\t\
++        int ret;\n\t\
++        ret = can_umount(path, flags);\n\t\
++        if (!ret)\n\t\
++                ret = do_umount(mnt, flags);\n\t\
++        dput(path->dentry);\n\t\
++        mntput_no_expire(mnt);\n\t\
++        return ret;\n\
++}\n
++$(shell sed -i '/^static bool is_mnt_ns_file/i $(PATH_UMOUNT)' $(srctree)/fs/namespace.c)
++endif
++
++ifneq ($(shell grep -Eq "^int path_umount" $(srctree)/fs/internal.h; echo $$?),0)
++$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h)
 +endif
 +
  # Keep a new line here!! Because someone may append config
@@ -455,7 +497,7 @@ index 00000000..f3506c27
 +
 +#endif // #ifndef __KSU_H_KERNEL_COMPAT
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 87a17ef0..049ae1c4 100644
+index 87a17ef0..31430138 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
 @@ -12,16 +12,34 @@
@@ -496,7 +538,7 @@ index 87a17ef0..049ae1c4 100644
  #include "feature/selinux_hide.h"
  #include "feature/module_blacklist.h"
  #include "feature/shell_su_adb_only.h"
-@@ -139,9 +140,11 @@ int __init kernelsu_init(void)
+@@ -139,9 +157,11 @@ int __init kernelsu_init(void)
  		return -ENOSYS;
  	}
  
@@ -1410,10 +1452,10 @@ index 00000000..0d8626b7
 +#endif
 diff --git a/kernel/hook/hook_manager.h b/kernel/hook/hook_manager.h
 new file mode 100644
-index 00000000..af7ec247
+index 00000000..f3822bc1
 --- /dev/null
 +++ b/kernel/hook/hook_manager.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,52 @@
 +#ifndef __KSU_H_HOOK_MANAGER
 +#define __KSU_H_HOOK_MANAGER
 +
@@ -1424,6 +1466,8 @@ index 00000000..af7ec247
 +// Hook manager initialization and cleanup
 +void ksu_syscall_hook_manager_init(void);
 +void ksu_syscall_hook_manager_exit(void);
++void __init ksu_lsm_hook_init(void);
++void ksu_lsm_hook_exit(void);
 +
 +// extras.c
 +void ksu_avc_spoof_init(void);
@@ -1464,13 +1508,12 @@ index 00000000..af7ec247
 +#endif
 +
 +#endif
-\ No newline at end of file
 diff --git a/kernel/hook/lsm_hooks.c b/kernel/hook/lsm_hooks.c
 new file mode 100644
-index 00000000..f7405a77
+index 00000000..f082733b
 --- /dev/null
 +++ b/kernel/hook/lsm_hooks.c
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,166 @@
 +#include <linux/lsm_hooks.h>
 +#include <linux/uidgid.h>
 +#include <linux/version.h>
@@ -1505,6 +1548,10 @@ index 00000000..f7405a77
 +	return 0;
 +}
 +#endif
++
++void ksu_lsm_hook_exit(void)
++{
++}
 +
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 +static int ksu_inode_rename(struct mnt_idmap *idmap, struct inode *old_dir, struct dentry *old_dentry,

@@ -346,6 +346,10 @@ the KSU Kconfig. The redfin defconfig patch should keep the explicit
 After removing a defconfig option, remove its entire now-empty diff hunk too;
 otherwise `patch` rejects the file as malformed.
 
+On redfin 4.19, the v3.4.2 KSU compatibility patch also supplies the
+`can_umount()`/`path_umount()` backport through Kbuild and the matching
+`fs/internal.h` declaration.
+
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 
 1. Change the KernelSU-Next ref and commit in `config/versions.env`.

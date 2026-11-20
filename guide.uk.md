@@ -350,6 +350,10 @@ fastboot reboot
 Після вилучення defconfig-опції також вилучайте її порожній diff hunk, інакше
 `patch` відхилить файл як malformed.
 
+На redfin 4.19 compatibility-патч v3.4.2 також додає backport
+`can_umount()`/`path_umount()` через Kbuild і відповідну декларацію в
+`fs/internal.h`.
+
 Не редагуйте згенеровані вихідні файли та не замінюйте цілі дерева вихідних текстів архівами. Оновлюйте відповідну закріплену ревізію та її власний набір патчів:
 
 1. Змініть ref і коміт KernelSU-Next у `config/versions.env`.
