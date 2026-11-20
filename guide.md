@@ -161,6 +161,11 @@ checkout by default, checks out the pinned KernelSU-Next revision, applies the
 ordered patches, builds with the VINTF configuration, and writes evidence to
 `dist/`.
 
+After its first successful download, the pinned KernelSU-Next commit is reused
+from the local clone. A GitHub connection is required only when that exact
+commit is absent locally; a transient network failure does not block a cached,
+verified revision.
+
 The resulting kernel release is `4.19.278-ksun-susfs-g<integration-sha>`, where the SHA identifies the one local commit containing the applied integration. It deliberately does not use the uninformative `00001` Git-distance suffix.
 
 ```bash

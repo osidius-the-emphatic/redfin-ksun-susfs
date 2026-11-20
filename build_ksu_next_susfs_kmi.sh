@@ -112,9 +112,13 @@ if [[ -d "$KSU/.git" ]]; then
 else
   git clone "$KSU_URL" "$KSU"
 fi
-git -C "$KSU" fetch --tags origin "$KSU_REF"
-if [[ "$(git -C "$KSU" rev-parse --is-shallow-repository)" == true ]]; then
-  git -C "$KSU" fetch --unshallow origin
+if ! git -C "$KSU" cat-file -e "$KSU_EXPECTED_COMMIT^{commit}" 2>/dev/null; then
+  echo "== 1/5: fetching missing KernelSU-Next revision $KSU_REF =="
+  git -C "$KSU" fetch --tags origin "$KSU_REF" \
+    || die "pinned KernelSU-Next commit is unavailable locally and fetch failed: $KSU_EXPECTED_COMMIT"
+fi
+if ! git -C "$KSU" cat-file -e "$KSU_EXPECTED_COMMIT^{commit}" 2>/dev/null; then
+  die "pinned KernelSU-Next commit is unavailable after fetch: $KSU_EXPECTED_COMMIT"
 fi
 git -C "$KSU" reset --hard
 git -C "$KSU" clean -fdx
