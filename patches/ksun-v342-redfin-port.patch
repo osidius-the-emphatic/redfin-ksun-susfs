@@ -3875,3 +3875,15 @@ index f0dd427b..2d0d88bd 100644
 -    ksu_supercall_cleanup_state();
 +	ksu_supercall_cleanup_state();
  }
+diff --git a/kernel/infra/seccomp_cache.h b/kernel/infra/seccomp_cache.h
+index 270381d9..d4a019c2 100644
+--- a/kernel/infra/seccomp_cache.h
++++ b/kernel/infra/seccomp_cache.h
+@@ -1,5 +1,5 @@
+-#ifndef __KSU_H_KERNEL_COMPAT
+-#define __KSU_H_KERNEL_COMPAT
++#ifndef __KSU_H_SECCOMP_CACHE
++#define __KSU_H_SECCOMP_CACHE
+ 
+ #include <linux/fs.h>
+ #include <linux/version.h>
