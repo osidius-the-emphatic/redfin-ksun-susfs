@@ -343,6 +343,8 @@ If `check_defconfig` reports that `savedefconfig` removed
 `CONFIG_KSU_MANUAL_HOOK=y`, do not add it back: this symbol has `default y` in
 the KSU Kconfig. The redfin defconfig patch should keep the explicit
 `CONFIG_KPROBES=y` addition only.
+After removing a defconfig option, remove its entire now-empty diff hunk too;
+otherwise `patch` rejects the file as malformed.
 
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 
