@@ -1,5 +1,5 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index c32fa7cd..dde80fbe 100644
+index c32fa7cd..d230896d 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -1,25 +1,14 @@
@@ -37,7 +37,7 @@ index c32fa7cd..dde80fbe 100644
  
 +# 4.19 lacks the secure anonymous-inode initialization helper. The file-wrapper
 +# compatibility code selects the plain anonymous-inode path in that case.
-+ifneq ($(shell grep -q "security_inode_init_security_anon" $(srctree)/include/linux/security.h; echo $$?),0)
++ifeq ($(shell grep -q "security_inode_init_security_anon" $(srctree)/include/linux/security.h; echo $$?),0)
 +ccflags-y += -DKSU_COMPAT_HAS_INIT_SEC_ANON
 +endif
 +
@@ -1877,7 +1877,7 @@ index 3cccc780..7b98498d 100644
 +	ksu_kernel_umount_exit();
  }
 diff --git a/kernel/infra/file_wrapper.c b/kernel/infra/file_wrapper.c
-index 3d098d64..a5b916dc 100644
+index 3d098d64..022d01e1 100644
 --- a/kernel/infra/file_wrapper.c
 +++ b/kernel/infra/file_wrapper.c
 @@ -2,6 +2,7 @@
@@ -2851,7 +2851,7 @@ index 3d098d64..a5b916dc 100644
 +
 +	struct inode_security_struct *wrapper_sec;
 +
-+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 19, 0)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
 +	wrapper_sec = wrapper_inode->i_security;
 +#else
 +	wrapper_sec = selinux_inode(wrapper_inode);
