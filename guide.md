@@ -363,25 +363,22 @@ For the A/B device, inspect the active slot first with `fastboot getvar current-
 ## Updating KernelSU-Next or SuSFS
 
 The `ksun-3.4.2-susfs-2.2` branch pins official KernelSU-Next `v3.4.2` and
-applies `patches/ksun-v342-redfin-port.patch`. This focused patch keeps the
-official driver sources and adds only the manual-hook/legacy-kernel bridge plus
-the built-in SuSFS v2.2 integration. It applies with `patch --fuzz=0`; no
-kernel build has been run for this branch yet.
-The manual `fs/exec.c` hook is bridged to the official v3.4.2
-`ksu_handle_execveat_ksud(path, argv)` runtime API and then to the 4.19
-sucompat handler. The patch passes `git apply --check` on a clean v3.4.2 tree;
-only a real redfin compile can validate compiler and linker compatibility.
+applies `patches/ksun-v342-redfin-port.patch`. This focused patch retains the
+official v3.4.2 kprobe/tracepoint hook architecture and adds only Linux 4.19
+API compatibility plus the built-in SuSFS v2.2 bridge. The separate
+`susfs-open-redirect-redbull.patch` contains only the VFS open-redirect hook;
+the old manual-hook patch is not in the series.
 
-If `check_defconfig` reports that `savedefconfig` removed
-`CONFIG_KSU_MANUAL_HOOK=y`, do not add it back: this symbol has `default y` in
-the KSU Kconfig. The redfin defconfig patch should keep the explicit
-`CONFIG_KPROBES=y` addition only.
-After removing a defconfig option, remove its entire now-empty diff hunk too;
-otherwise `patch` rejects the file as malformed.
+The complete `drivers/kernelsu/` target was compile-checked against the
+redfin 4.19 tree with the official v3.4.2 object list. The test reached
+`AR drivers/kernelsu/built-in.a` with no KSU compile errors; a full kernel link
+and ABI build are still required before packaging.
 
 On redfin 4.19, the v3.4.2 KSU compatibility patch also supplies the
 `can_umount()`/`path_umount()` backport through Kbuild and the matching
-`fs/internal.h` declaration.
+`fs/internal.h` declaration. If `fs/susfs.c` reports an implicit
+`path_umount`, the source tree is using an older patch copy; resynchronize the
+private branch into WSL before retrying.
 
 Do not edit generated source files or replace whole source trees with archives. Update the appropriate pinned revision and its own patch set:
 
@@ -392,8 +389,9 @@ Do not edit generated source files or replace whole source trees with archives. 
 5. Review the series with `git apply --check` or the build script preparation checks.
 6. Perform a clean build and require a zero-mismatch vendor-module ABI report before packaging.
 
-The stable KernelSU-Next Manager v3.4.2 uses UAPI 5 and is compatible with the
-legacy kernel integration in this repository.
+The stable KernelSU-Next Manager v3.4.2 uses UAPI 5. The built driver reports
+the official v3.4.2 tag; the device build still requires the normal full-build
+and runtime checks before it is considered validated.
 
 ## Why `versions.env` exists
 
@@ -434,4 +432,3 @@ The original incompatibility was caused by changed exported-symbol CRCs in the k
 For detailed working history and investigation notes, see
 [HANDOFF-context.md](HANDOFF-context.md). It is not required to execute this
 procedure.
-

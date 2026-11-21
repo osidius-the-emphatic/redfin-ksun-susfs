@@ -141,7 +141,7 @@ while IFS= read -r patch_name; do
   echo "-- $patch_name"
   patch --batch --fuzz=0 --forward -d "$KERNEL" -p1 < "$PATCH/$patch_name" || die "failed to apply $patch_name"
 done < "$PATCH/series"
-for spec in 'kernel/reboot.c:ksu_handle_sys_reboot' 'fs/exec.c:ksu_handle_execveat' 'drivers/input/input.c:ksu_handle_input_handle_event' 'fs/open.c:ksu_handle_faccessat' 'fs/stat.c:susfs_generic_fillattr_spoofer' 'fs/read_write.c:ksu_handle_vfs_read' 'fs/susfs.c:SUSFS_VERSION'; do
+for spec in 'kernel/Kbuild:hook/syscall_event_bridge.o' 'kernel/hook/syscall_hook_manager.c:ksu_syscall_table_hook' 'fs/open.c:susfs_open_redirect_spoof_do_sys_openat' 'fs/stat.c:susfs_generic_fillattr_spoofer' 'fs/susfs.c:SUSFS_VERSION'; do
   rel="${spec%%:*}"; token="${spec##*:}"
   grep -q "$token" "$KERNEL/$rel" || die "missing $token in $rel"
 done
@@ -195,7 +195,7 @@ ACTUAL_UTS_RELEASE="$(sed -n 's/^#define UTS_RELEASE "\(.*\)"$/\1/p' "$UTS_RELEA
 for expected in \
   'CONFIG_CFI=y' 'CONFIG_CFI_CLANG=y' 'CONFIG_CFI_CLANG_SHADOW=y' \
   '# CONFIG_THINLTO is not set' 'CONFIG_TRIM_UNUSED_KSYMS=y' \
-  'CONFIG_KPROBES=y' 'CONFIG_KSU=y' 'CONFIG_KSU_MANUAL_HOOK=y' \
+  'CONFIG_KPROBES=y' 'CONFIG_KSU=y' \
   'CONFIG_KSU_SUSFS=y' 'CONFIG_KSU_SUSFS_SUS_PATH=y' \
   'CONFIG_KSU_SUSFS_SUS_MOUNT=y' 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' \
   'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'; do

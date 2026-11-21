@@ -367,25 +367,22 @@ fastboot reboot
 ## Оновлення KernelSU-Next або SuSFS
 
 Гілка `ksun-3.4.2-susfs-2.2` закріплює офіційний KernelSU-Next `v3.4.2` і
-застосовує `patches/ksun-v342-redfin-port.patch`. Focused-патч зберігає
-офіційні джерела драйвера та додає лише manual-hook/legacy-kernel міст і
-вбудовану інтеграцію SuSFS v2.2. Він накладається через `patch --fuzz=0`;
-збірку ядра для цієї гілки ще не запускали.
-Ручний хук `fs/exec.c` з'єднаний з офіційним runtime API v3.4.2
-`ksu_handle_execveat_ksud(path, argv)`, а потім із sucompat-обробником 4.19.
-Патч проходить `git apply --check` на чистому дереві v3.4.2; сумісність
-компілятора й лінкера підтвердить лише реальна збірка redfin.
+застосовує `patches/ksun-v342-redfin-port.patch`. Цей focused-патч зберігає
+офіційну kprobe/tracepoint-архітектуру хуків v3.4.2 і додає лише сумісність
+API Linux 4.19 та вбудований міст SuSFS v2.2. Окремий
+`susfs-open-redirect-redbull.patch` містить лише VFS open-redirect hook;
+старого manual-hook-патчу в серії немає.
 
-Якщо `check_defconfig` повідомляє, що `savedefconfig` прибрав
-`CONFIG_KSU_MANUAL_HOOK=y`, не додавайте його назад: у Kconfig KSU для цього
-символу вже задано `default y`. У redfin defconfig-патчі має залишатися лише
-явне додавання `CONFIG_KPROBES=y`.
-Після вилучення defconfig-опції також вилучайте її порожній diff hunk, інакше
-`patch` відхилить файл як malformed.
+Повну ціль `drivers/kernelsu/` перевірено компіляцією проти redfin 4.19 з
+офіційним списком об'єктів v3.4.2. Тест дійшов до
+`AR drivers/kernelsu/built-in.a` без помилок компіляції KSU; повні link та ABI
+збірки ще потрібні перед пакуванням.
 
 На redfin 4.19 compatibility-патч v3.4.2 також додає backport
 `can_umount()`/`path_umount()` через Kbuild і відповідну декларацію в
-`fs/internal.h`.
+`fs/internal.h`. Якщо `fs/susfs.c` повідомляє про implicit `path_umount`, у
+WSL використовується стара копія патча; перед повтором синхронізуйте приватну
+гілку.
 
 Не редагуйте згенеровані вихідні файли та не замінюйте цілі дерева вихідних текстів архівами. Оновлюйте відповідну закріплену ревізію та її власний набір патчів:
 
@@ -396,8 +393,9 @@ fastboot reboot
 5. Перевірте серію через `git apply --check` або перевірки підготовки скрипта збірки.
 6. Виконайте чисту збірку та вимагайте ABI-звіт модулів vendor без розбіжностей до пакування.
 
-Stable KernelSU-Next Manager v3.4.2 використовує UAPI 5 і сумісний із legacy-
-інтеграцією ядра в цьому репозиторії.
+Stable KernelSU-Next Manager v3.4.2 використовує UAPI 5. Зібраний драйвер
+повідомляє офіційний тег v3.4.2; повна збірка та runtime-перевірка ще потрібні,
+перш ніж вважати його перевіреним.
 
 ## Навіщо існує `versions.env`
 
@@ -438,4 +436,3 @@ Builder автоматично виконує reset і локальну синх
 Для детальної робочої історії та нотаток розслідування дивіться
 [HANDOFF-context.md](HANDOFF-context.md). Він не потрібен для виконання цієї
 процедури.
-

@@ -34,7 +34,7 @@ Local Pixel 5 adaptations
 --------------------------
 
 patches/susfs-mount-namespace-copy.patch,
-patches/manual-hooks-redbull.patch,
+patches/susfs-open-redirect-redbull.patch,
 patches/kmi-vfsmount.patch,
 patches/kmi-stat-crc-full.patch,
 patches/kmi-namei-crc-full.patch, and

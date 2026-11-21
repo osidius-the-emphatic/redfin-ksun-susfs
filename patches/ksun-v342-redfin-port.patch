@@ -1,55 +1,18 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index c32fa7cd..cab414c1 100644
+index c32fa7cd..2693a5b0 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
-@@ -1,25 +1,14 @@
+@@ -1,4 +1,5 @@
  kernelsu-objs := core/init.o
-
 +kernelsu-objs += compat/kernel_compat.o
+ 
  kernelsu-objs += feature/kernel_umount.o
  kernelsu-objs += feature/module_blacklist.o
- kernelsu-objs += feature/sulog.o
- kernelsu-objs += feature/sucompat.o
-
--kernelsu-objs += hook/lsm_hook.o
-+kernelsu-objs += hook/hook_manager.o
-+kernelsu-objs += hook/lsm_hooks.o
- kernelsu-objs += hook/setuid_hook.o
--kernelsu-objs += hook/syscall_event_bridge.o
--kernelsu-objs += hook/syscall_hook_manager.o
--kernelsu-objs += hook/tp_marker.o
--ifeq ($(CONFIG_ARM64),y)
--kernelsu-objs += hook/arm64/patch_memory.o
--kernelsu-objs += hook/arm64/syscall_hook.o
--else ifeq ($(CONFIG_X86_64),y)
--kernelsu-objs += hook/x86_64/patch_memory.o
--kernelsu-objs += hook/x86_64/syscall_hook.o
--else ifeq ($(CONFIG_RISCV),y)
--kernelsu-objs += hook/riscv64/patch_memory.o
--kernelsu-objs += hook/riscv64/syscall_hook.o
--endif
- kernelsu-objs += extras.o
-
- kernelsu-objs += infra/file_wrapper.o
-@@ -75,6 +64,14 @@ endif
- ccflags-y += -I$(srctree)/security/selinux -I$(srctree)/security/selinux/include
- ccflags-y += -I$(objtree)/security/selinux -include $(srctree)/include/uapi/asm-generic/errno.h
-
-+# SELinux policy database layout checks for legacy kernels.
-+ifeq ($(shell grep -q "struct selinux_state " $(srctree)/security/selinux/include/security.h; echo $$?),0)
-+ccflags-y += -DKSU_COMPAT_USE_SELINUX_STATE
-+endif
-+ifeq ($(shell grep -q "^DEFINE_RWLOCK(policy_rwlock);" $(srctree)/security/selinux/ss/services.c; echo $$?),0)
-+ccflags-y += -DKSU_COMPAT_HAS_EXPORTED_POLICY_RWLOCK
-+endif
-+
- ifneq ($(KBUILD_EXTMOD),)
- # 6.18 exports the external module source as srcroot when M/MO are used.
- ifneq ($(srcroot),)
-@@ -162,4 +159,61 @@ ccflags-y += -DKSU_NEW_DCACHE_FLUSH=$(KSU_NEW_DCACHE_FLUSH)
- ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-missing-prototypes -Wno-missing-declarations
+@@ -163,3 +164,65 @@ ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-mis
  ccflags-y += -Wno-declaration-after-statement -Wno-unused-function -Wno-unused-variable
-
+ 
+ # Keep a new line here!! Because someone may append config
++
 +# 4.19 lacks the secure anonymous-inode initialization helper. The file-wrapper
 +# compatibility code selects the plain anonymous-inode path in that case.
 +ifeq ($(shell grep -q "security_inode_init_security_anon" $(srctree)/include/linux/security.h; echo $$?),0)
@@ -107,91 +70,10 @@ index c32fa7cd..cab414c1 100644
 +$(shell sed -i '/^extern void __init mnt_init/a int path_umount(struct path *path, int flags);' $(srctree)/fs/internal.h)
 +endif
 +
- # Keep a new line here!! Because someone may append config
-diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 88e22811..f823d761 100644
---- a/kernel/Kconfig
-+++ b/kernel/Kconfig
-@@ -11,6 +11,13 @@ config KSU
- 	  To compile as a module, choose M here: the
- 	  module will be called kernelsu.
-
-+config KSU_MANUAL_HOOK
-+	bool "KernelSU manual hook mode"
-+	depends on KSU && KSU != m
-+	default y
-+	help
-+	  Enable source-level call sites for legacy kernels.
-+
- config KSU_DEBUG
- 	bool "KernelSU debug mode"
- 	depends on KSU
-@@ -43,4 +50,65 @@ config KSU_X86_PATCH_SYSCALL_DISPATCHER
- 	  Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
- 	  replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
-
-+config KSU_SUSFS
-+	bool "KernelSU addon - SUSFS"
-+	depends on KSU
-+	depends on THREAD_INFO_IN_TASK
-+	default y
-+
-+config KSU_SUSFS_SUS_PATH
-+	bool "Enable to hide suspicious path"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SUS_MOUNT
-+	bool "Enable to hide suspicious mounts"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SUS_KSTAT
-+	bool "Enable to spoof suspicious kstat"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_TRY_UMOUNT
-+	bool "Enable SuSFS try_umount"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SPOOF_UNAME
-+	bool "Enable to spoof uname"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_ENABLE_LOG
-+	bool "Enable SuSFS logging"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-+	bool "Enable to hide KernelSU and SuSFS symbols"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-+	bool "Enable to spoof cmdline or bootconfig"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_OPEN_REDIRECT
-+	bool "Enable open redirect"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SUS_MAP
-+	bool "Enable to hide suspicious mapped files"
-+	depends on KSU_SUSFS
-+	default y
-+
-+config KSU_SUSFS_SUS_MEMFD
-+	bool "Enable suspicious memfd handling"
-+	depends on KSU_SUSFS
-+	default n
-+
- endmenu
++# Keep a new line here!! Because someone may append config
++# Compatibility for the redbull 4.19 SELinux layout.
++ccflags-y += -DKSU_COMPAT_USE_SELINUX_STATE
++ccflags-y += -DKSU_COMPAT_HAS_EXPORTED_POLICY_RWLOCK
 diff --git a/kernel/compat/kernel_compat.c b/kernel/compat/kernel_compat.c
 new file mode 100644
 index 00000000..6deb054f
@@ -514,40 +396,12 @@ index 00000000..30567eff
 +
 +#endif // #ifndef __KSU_H_KERNEL_COMPAT
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 87a17ef0..31430138 100644
+index 87a17ef0..b99f8626 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
-@@ -12,16 +12,34 @@
- #include "klog.h" // IWYU pragma: keep
- #include "manager/manager_observer.h"
- #include "manager/throne_tracker.h"
--#include "hook/syscall_hook_manager.h"
--#include "hook/lsm_hook.h"
-+#include "hook/hook_manager.h"
- #include "runtime/ksud.h"
- #include "runtime/ksud_boot.h"
- #include "supercall/supercall.h"
- #include "ksu.h"
- #include "infra/file_wrapper.h"
-+/* The manual redfin execve hook uses the 4.19 kernel's user_arg_ptr.  KSUN
-+ * keeps a private, layout-compatible copy in ksud_integration.c, so only an
-+ * opaque forward declaration is needed at this call boundary. */
-+struct user_arg_ptr;
-+extern void ksu_handle_execveat_ksud(const char *path,
-+				     struct user_arg_ptr *argv);
-+extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-+					void *argv, void *envp, int *flags);
-+
-+int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-+			void *envp, int *flags)
-+{
-+	if (filename_ptr && *filename_ptr && !IS_ERR(*filename_ptr))
-+		ksu_handle_execveat_ksud((*filename_ptr)->name,
-+					 (struct user_arg_ptr *)argv);
-+	return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp, flags);
-+}
+@@ -22,6 +22,9 @@
  #include "selinux/selinux.h"
--#include "hook/syscall_hook.h"
+ #include "hook/syscall_hook.h"
  #include "feature/adb_root.h"
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs.h>
@@ -555,25 +409,21 @@ index 87a17ef0..31430138 100644
  #include "feature/selinux_hide.h"
  #include "feature/module_blacklist.h"
  #include "feature/shell_su_adb_only.h"
-@@ -139,9 +157,11 @@ int __init kernelsu_init(void)
+@@ -139,6 +142,9 @@ int __init kernelsu_init(void)
  		return -ENOSYS;
  	}
-
--	ksu_init_symbol_resolver();
--	ksu_syscall_hook_init();
+ 
 +#ifdef CONFIG_KSU_SUSFS
 +	susfs_init();
 +#endif
-
-+	ksu_init_symbol_resolver();
- 	// Block modules early, before vendor modules are loaded in second stage.
- 	ksu_module_blacklist_init();
-
+ 	ksu_init_symbol_resolver();
+ 	ksu_syscall_hook_init();
+ 
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
-index 459f99f9..4956ea08 100644
+index 459f99f9..7111d6f5 100644
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
-@@ -1,1257 +1,588 @@
+@@ -1,1257 +1,593 @@
 -#include "selinux_hide.h"
 -#include "infra/symbol_resolver.h"
 -#include "linux/jump_label.h"
@@ -650,7 +500,7 @@ index 459f99f9..4956ea08 100644
 +#include <linux/sched.h>
 +#include <linux/proc_fs.h>
 +#include <linux/kthread.h>
-
+ 
 -static int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
 -                                               u32 *sid, u32 def_sid, gfp_t gfp_flags, u32 *orig_sid_p, int *orig_rc_p);
 -static int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,
@@ -668,13 +518,13 @@ index 459f99f9..4956ea08 100644
 +#include "selinux/selinux.h"
 +#include "feature/selinux_hide.h"
 +#include "compat/kernel_compat.h"
-
+ 
 -static write_op_fn *context_write, *access_write;
 -static write_op_fn orig_context_write, orig_access_write;
 +#ifndef __nocfi
 +#define __nocfi
 +#endif
-
+ 
 -#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 -#define ksu_avc_has_perm_compat(...) avc_has_perm(__VA_ARGS__)
 -#define ksu_security_bounded_transition_compat(...) security_bounded_transition(__VA_ARGS__)
@@ -686,7 +536,7 @@ index 459f99f9..4956ea08 100644
 -#define ksu_security_bounded_transition_compat(...) security_bounded_transition(&selinux_state, __VA_ARGS__)
 +#define KSU_HAS_SELINUX_STATE 0
  #endif
-
+ 
 -#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
 -#define ksu_task_security_struct task_security_struct
 -#else
@@ -694,7 +544,7 @@ index 459f99f9..4956ea08 100644
 +#ifndef SIMPLE_TRANSACTION_LIMIT
 +#define SIMPLE_TRANSACTION_LIMIT (PAGE_SIZE - 1)
  #endif
-
+ 
 -static ssize_t my_write_context(struct file *file, char *buf, size_t size)
 -{
 -    // apply to all app uids
@@ -706,7 +556,7 @@ index 459f99f9..4956ea08 100644
 -    ssize_t length;
 +#define KSU_SEL_CONTEXT_INO 5
 +#define KSU_SEL_ACCESS_INO  6
-
+ 
 -    length =
 -        ksu_avc_has_perm_compat(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
 -    if (length)
@@ -716,7 +566,7 @@ index 459f99f9..4956ea08 100644
 -        goto out;
 -    }
 +static bool ksu_selinux_hide_enabled __read_mostly = true;
-
+ 
 -    length = security_sid_to_context_with_policy(backup_sepolicy, sid, &canon, &len);
 -    if (length)
 -        goto out;
@@ -724,7 +574,7 @@ index 459f99f9..4956ea08 100644
 +    size_t len;
 +    char   data[];
 +} __aligned(sizeof(size_t));
-
+ 
 -    length = -ERANGE;
 -    if (len > SIMPLE_TRANSACTION_LIMIT) {
 -        pr_err("SELinux: %s:  context size (%u) exceeds "
@@ -735,7 +585,7 @@ index 459f99f9..4956ea08 100644
 +static struct ksu_hide_buf __rcu *ksu_hide_type_list = NULL;
 +static struct ksu_hide_buf __rcu *ksu_hide_rule_list = NULL;
 +static DEFINE_MUTEX(ksu_hide_list_mutex);
-
+ 
 -    memcpy(buf, canon, len);
 -    length = len;
 -out:
@@ -748,7 +598,7 @@ index 459f99f9..4956ea08 100644
 +    synchronize_rcu();
 +    kfree(old);
  }
-
+ 
 -static ssize_t my_write_access(struct file *file, char *buf, size_t size)
 +void ksu_selinux_hide_add_type(const char *name)
  {
@@ -765,33 +615,33 @@ index 459f99f9..4956ea08 100644
 -    length = ksu_avc_has_perm_compat(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__COMPUTE_AV, NULL);
 -    if (length)
 -        goto out;
--
++    struct ksu_hide_buf *old_buf, *new_buf;
++    size_t old_len, need, i, name_len;
+ 
 -    length = -ENOMEM;
 -    scon = kzalloc(size + 1, GFP_KERNEL);
 -    if (!scon)
 -        goto out;
-+    struct ksu_hide_buf *old_buf, *new_buf;
-+    size_t old_len, need, i, name_len;
-
+-
 -    length = -ENOMEM;
 -    tcon = kzalloc(size + 1, GFP_KERNEL);
 -    if (!tcon)
 -        goto out;
 +    if (!name || !*name)
 +        return;
-
+ 
 -    length = -EINVAL;
 -    if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
 -        goto out;
 +    name_len = strlen(name);
 +    need = name_len + 3;
-
+ 
 -    sconlen = strlen(scon);
 -    tconlen = strlen(tcon);
 +    mutex_lock(&ksu_hide_list_mutex);
 +    old_buf = rcu_dereference_protected(ksu_hide_type_list, 1);
 +    old_len = old_buf ? old_buf->len : 0;
-
+ 
 -    length =
 -        security_context_to_sid_with_policy(backup_sepolicy, scon, sconlen, &ssid, SECSID_NULL, GFP_KERNEL, NULL, NULL);
 -    if (length) {
@@ -804,7 +654,7 @@ index 459f99f9..4956ea08 100644
 +            i += strlen(cur) + 1;
 +        }
      }
-
+ 
 -    length =
 -        security_context_to_sid_with_policy(backup_sepolicy, tcon, tconlen, &tsid, SECSID_NULL, GFP_KERNEL, NULL, NULL);
 -    if (length) {
@@ -816,11 +666,11 @@ index 459f99f9..4956ea08 100644
 +    if (old_buf && old_len)
 +        memcpy(new_buf->data, old_buf->data, old_len);
 +    sprintf(new_buf->data + old_len, ":%s:", name);
-
+ 
 -    security_compute_av_user_with_policy(backup_sepolicy, ssid, tsid, tclass, &avd);
 +    ksu_rcu_replace(&ksu_hide_type_list, new_buf);
 +    pr_info_ratelimited("selinux_hide: track type: :%s:\n", name);
-
+ 
 -    // stock reads 1; a loader load_policy may have bumped the backup before we load
 -    avd.seqno = 1;
 -    length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%x %x %x %x %u %x", avd.allowed, 0xffffffff, avd.auditallow,
@@ -829,8 +679,9 @@ index 459f99f9..4956ea08 100644
 -    kfree(tcon);
 -    kfree(scon);
 -    return length;
--}
--
++    mutex_unlock(&ksu_hide_list_mutex);
+ }
+ 
 -static int my_setprocattr(const char *name, void *value, size_t size);
 -struct ksu_lsm_hook selinux_setprocattr_hook = KSU_LSM_HOOK_INIT(setprocattr, "selinux_setprocattr", my_setprocattr, 0);
 -
@@ -856,9 +707,8 @@ index 459f99f9..4956ea08 100644
 -    sid = cred_sid(__task_cred(task));
 -    rcu_read_unlock();
 -    return sid;
-+    mutex_unlock(&ksu_hide_list_mutex);
- }
-
+-}
+-
 -static u32 ptrace_parent_sid(void)
 +void ksu_selinux_hide_add_rule(const char *src, const char *tgt)
  {
@@ -867,7 +717,7 @@ index 459f99f9..4956ea08 100644
 +    struct ksu_hide_buf *old_buf, *new_buf;
 +    size_t old_len, need_src, need_tgt, need, i;
 +    char *p;
-
+ 
 -    rcu_read_lock();
 -    tracer = ptrace_parent(current);
 -    if (tracer)
@@ -875,13 +725,13 @@ index 459f99f9..4956ea08 100644
 -    rcu_read_unlock();
 +    if (!src || !*src || !tgt || !*tgt)
 +        return;
-
+ 
 -    return sid;
 -}
 +    need_src = strlen(src) + 3;
 +    need_tgt = strlen(tgt) + 3;
 +    need     = need_src + need_tgt;
-
+ 
 -typedef int (*setprocattr_fn)(const char *name, void *value, size_t size);
 -static int __nocfi my_setprocattr(const char *name, void *value, size_t size)
 -{
@@ -891,7 +741,7 @@ index 459f99f9..4956ea08 100644
 +    mutex_lock(&ksu_hide_list_mutex);
 +    old_buf = rcu_dereference_protected(ksu_hide_rule_list, 1);
 +    old_len = old_buf ? old_buf->len : 0;
-
+ 
 -    if (strcmp(name, "current")) {
 -        goto call_orig;
 -    }
@@ -901,7 +751,7 @@ index 459f99f9..4956ea08 100644
 +            size_t ssz = strlen(csrc) + 1;
 +            const char *ctgt = csrc + ssz;
 +            size_t tsz = strlen(ctgt) + 1;
-
+ 
 -    struct ksu_task_security_struct *tsec;
 -    struct cred *new;
 -    u32 mysid = current_sid(), sid = 0, tmp_sid, ptsid;
@@ -961,7 +811,7 @@ index 459f99f9..4956ea08 100644
 -        if (error)
 -            goto abort_change;
      }
-
+ 
 -    tsec->sid = sid;
 +    new_buf = kmalloc(sizeof(*new_buf) + old_len + need, GFP_KERNEL);
 +    if (!new_buf)
@@ -969,26 +819,26 @@ index 459f99f9..4956ea08 100644
 +    new_buf->len = old_len + need;
 +    if (old_buf && old_len)
 +        memcpy(new_buf->data, old_buf->data, old_len);
-
+ 
 -    commit_creds(new);
 -    return size;
 +    p = new_buf->data + old_len;
 +    sprintf(p, ":%s:", src);
 +    p += strlen(p) + 1;
 +    sprintf(p, ":%s:", tgt);
-
+ 
 -abort_change:
 -    abort_creds(new);
 -    return error;
 +    ksu_rcu_replace(&ksu_hide_rule_list, new_buf);
 +    pr_info_ratelimited("selinux_hide: track rule: :%s: -> :%s:\n", src, tgt);
-
+ 
 -call_orig:
 -    return ((setprocattr_fn)selinux_setprocattr_hook.original)(name, value, size);
 +out:
 +    mutex_unlock(&ksu_hide_list_mutex);
  }
-
+ 
 -static DEFINE_STATIC_KEY_FALSE(fake_status_initialize_key);
 -static struct page *fake_status = NULL;
 -
@@ -1004,7 +854,7 @@ index 459f99f9..4956ea08 100644
 -    }
 +    struct ksu_hide_buf *buf;
 +    size_t off;
-
+ 
 -    struct selinux_kernel_status *status = page_address(selinux_state.status_page);
 -    if (!status->enforcing && !ksu_late_loaded) {
 -        pr_warn("initialize_fake_status: skip not enforcing\n");
@@ -1012,14 +862,14 @@ index 459f99f9..4956ea08 100644
 -    }
 +    if (!str)
 +        return false;
-
+ 
 -    struct page *new_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
 -    if (!new_page) {
 -        pr_err("initialize_fake_status: failed to allocate page\n");
 -        goto out;
 -    }
 +    rcu_read_lock();
-
+ 
 -    struct selinux_kernel_status *new_status = page_address(new_page);
 -    memcpy(new_status, status, sizeof(*status));
 -    if (ksu_late_loaded) {
@@ -1049,7 +899,7 @@ index 459f99f9..4956ea08 100644
 +            off += strlen(entry) + 1;
          }
      }
-
+ 
 -    fake_status = new_page;
 -    pr_info("initialize_fake_status initialized: sequence=%d, policyload=%d, enforcing=%d\n", new_status->sequence,
 -            new_status->policyload, new_status->enforcing);
@@ -1066,7 +916,7 @@ index 459f99f9..4956ea08 100644
 +            size_t ssz = strlen(src) + 1;
 +            const char *tgt = src + ssz;
 +            size_t tsz = strlen(tgt) + 1;
-
+ 
 -typedef int (*sel_open_handle_status_fn)(struct inode *inode, struct file *filp);
 -static sel_open_handle_status_fn orig_sel_open_handle_status, *sel_open_handle_status_slot;
 -static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
@@ -1086,7 +936,7 @@ index 459f99f9..4956ea08 100644
 +            off += ssz + tsz;
          }
      }
-
+ 
 -    int ret = orig_sel_open_handle_status(inode, filp);
 -    if (static_branch_unlikely(&fake_status_initialize_key) && !ret && !fake_status) {
 -        initialize_fake_status();
@@ -1095,7 +945,7 @@ index 459f99f9..4956ea08 100644
 +    rcu_read_unlock();
 +    return false;
  }
-
+ 
 -static void hook_selinux_status_open();
 -static void ksu_selinux_hide_unhook();
 -static int ksu_selinux_hide_enable()
@@ -1125,7 +975,7 @@ index 459f99f9..4956ea08 100644
 +    const char *scon;
 +    const char *tcon;
 +};
-
+ 
 -    context_write = &selinux_write_op[SEL_CONTEXT];
 -    pr_info("selinux_hide: context_write: 0x%lx [%pSb]\n", (unsigned long)*context_write, *context_write);
 -    write_op_fn my = my_write_context;
@@ -1143,7 +993,7 @@ index 459f99f9..4956ea08 100644
 +    { "u:r:su:s0",            "u:r:droidspacesd:s0"         },
 +    { "u:r:system_server:s0", "u:r:droidspacesd:s0"         },
 +};
-
+ 
 -    access_write = &selinux_write_op[SEL_ACCESS];
 -    pr_info("selinux_hide: access_write: 0x%lx [%pSb]\n", (unsigned long)*access_write, *access_write);
 -    my = my_write_access;
@@ -1156,7 +1006,7 @@ index 459f99f9..4956ea08 100644
 +static bool ksu_is_dirty_access_query(const char *scon, const char *tcon)
 +{
 +    int i;
-
+ 
 -    ret = ksu_lsm_hook(&selinux_setprocattr_hook);
 -    if (ret) {
 -        pr_err("selinux_hide: init: selinux_setprocattr_hook err: %d\n", ret);
@@ -1174,7 +1024,7 @@ index 459f99f9..4956ea08 100644
 -    return -ENOSYS;
 +    return false;
  }
-
+ 
 -static void ksu_selinux_hide_unhook()
 +static void ksu_fix_access_response(void *private_data, bool deny)
  {
@@ -1208,7 +1058,7 @@ index 459f99f9..4956ea08 100644
 +    unsigned int allowed, ff, auditallow, auditdeny, flags, seqno;
 +    char buf[64];
 +    int len;
-
+ 
 -static void ksu_selinux_hide_disable()
 -{
 -    pr_info("selinux_hide: exit selinux hide\n");
@@ -1216,7 +1066,7 @@ index 459f99f9..4956ea08 100644
 -}
 +    if (!ar)
 +        return;
-
+ 
 -static int selinux_hide_feature_get(u64 *value)
 -{
 -    *value = ksu_selinux_hide_enabled ? 1 : 0;
@@ -1225,7 +1075,7 @@ index 459f99f9..4956ea08 100644
 +    if (sscanf(ar->data, "%x %x %x %x %u %x",
 +               &allowed, &ff, &auditallow, &auditdeny, &seqno, &flags) != 6)
 +        return;
-
+ 
 -static int selinux_hide_feature_set(u64 value)
 -{
 -    bool enable = value != 0;
@@ -1254,7 +1104,7 @@ index 459f99f9..4956ea08 100644
 -    mutex_unlock(&selinux_hide_mutex);
 -    return ret;
 -}
-
+ 
 -static const struct ksu_feature_handler selinux_hide_handler = {
 -    .feature_id = KSU_FEATURE_SELINUX_HIDE,
 -    .name = "selinux_hide",
@@ -1262,7 +1112,7 @@ index 459f99f9..4956ea08 100644
 -    .set_handler = selinux_hide_feature_set,
 -};
 +    seqno = 1;
-
+ 
 -void ksu_selinux_hide_handle_second_stage()
 -{
 -    initialize_fake_status();
@@ -1275,7 +1125,7 @@ index 459f99f9..4956ea08 100644
 -}
 +    len = scnprintf(buf, sizeof(buf), "%x %x %x %x %u %x",
 +                    allowed, 0xffffffff, auditallow, auditdeny, seqno, flags);
-
+ 
 -void ksu_selinux_hide_handle_post_fs_data()
 -{
 -    static_key_disable(&fake_status_initialize_key.key);
@@ -1287,7 +1137,7 @@ index 459f99f9..4956ea08 100644
 +        ar->size = len;
      }
  }
-
+ 
 -static void hook_selinux_status_open()
 +static int ksu_patch_fops_slot(void **slot, void *new_fn)
  {
@@ -1315,7 +1165,7 @@ index 459f99f9..4956ea08 100644
 +    unsigned long offset = addr & ~PAGE_MASK;
 +    struct page *page    = phys_to_page(__pa(base));
 +    void *w;
-
+ 
 -void __init ksu_selinux_hide_init()
 -{
 -    if (ksu_register_feature_handler(&selinux_hide_handler)) {
@@ -1330,7 +1180,7 @@ index 459f99f9..4956ea08 100644
 -}
 +    if (!page)
 +        return -EFAULT;
-
+ 
 -void __exit ksu_selinux_hide_exit()
 -{
 -    mutex_lock(&selinux_hide_mutex);
@@ -1354,7 +1204,7 @@ index 459f99f9..4956ea08 100644
 +    vunmap(w);
 +    return 0;
  }
-
+ 
 -void ksu_selinux_hide_drop_backup_if_unused()
 +static struct file_operations *ksu_resolve_fops(const char *path_str)
  {
@@ -1377,7 +1227,7 @@ index 459f99f9..4956ea08 100644
 +    path_put(&path);
 +    return fops;
  }
-
+ 
 -/*
 - * Caveat:  Mutates scontext.
 - */
@@ -1436,15 +1286,12 @@ index 459f99f9..4956ea08 100644
 +        }
 +        goto passthrough;
      }
-
+ 
 -    if (*p == 0)
 -        goto out;
 -
 -    *orig_p++ = *p++ = 0;
-+    ret = orig_sel_write(file, ubuf, size, pos);
-+    if (ret <= 0)
-+        return ret;
-
+-
 -    usrdatum = symtab_search(&pol->p_users, scontextp);
 -    orig_usrdatum = symtab_search(&orig_pol->p_users, orig_scontextp);
 -    if (!usrdatum)
@@ -1453,7 +1300,10 @@ index 459f99f9..4956ea08 100644
 -    ctx->user = usrdatum->value;
 -    if (orig_usrdatum)
 -        orig_ctx->user = orig_usrdatum->value;
--
++    ret = orig_sel_write(file, ubuf, size, pos);
++    if (ret <= 0)
++        return ret;
+ 
 -    /* Extract role. */
 -    scontextp = p;
 -    orig_scontextp = orig_p;
@@ -1465,17 +1315,17 @@ index 459f99f9..4956ea08 100644
 +        bool deny = false;
 +        char scon[128], tcon[128];
 +        unsigned int tclass_num;
-
+ 
 -    if (*p == 0)
 -        goto out;
 +        if (ksu_should_hide_context(kbuf))
 +            deny = true;
-
+ 
 -    *orig_p++ = *p++ = 0;
 +        if (sscanf(kbuf, "%127s %127s %u", scon, tcon, &tclass_num) == 3 &&
 +            ksu_is_dirty_access_query(scon, tcon))
 +            deny = true;
-
+ 
 -    role = symtab_search(&pol->p_roles, scontextp);
 -    orig_role = symtab_search(&orig_pol->p_roles, orig_scontextp);
 -    if (!role)
@@ -1500,11 +1350,11 @@ index 459f99f9..4956ea08 100644
 -    orig_typdatum = symtab_search(&orig_pol->p_types, orig_scontextp);
 -    if (!typdatum || typdatum->attribute)
 -        goto out;
--
+ 
 -    ctx->type = typdatum->value;
 -    if (orig_typdatum && !orig_typdatum->attribute)
 -        orig_ctx->type = orig_typdatum->value;
-
+-
 -    rc = mls_context_to_sid(pol, oldc, p, ctx, sidtabp, def_sid);
 -    orig_rc = mls_context_to_sid(orig_pol, orig_oldc, orig_p, orig_ctx, orig_sidtabp, def_sid);
 -    if (rc) {
@@ -1512,7 +1362,7 @@ index 459f99f9..4956ea08 100644
 -        goto out;
 -    }
 +    return ret;
-
+ 
 -    /* Check the validity of the new context. */
 -    orig_rc = rc = -EINVAL;
 -    if (policydb_context_isvalid(pol, ctx)) {
@@ -1531,7 +1381,7 @@ index 459f99f9..4956ea08 100644
 +passthrough:
 +    return orig_sel_write(file, ubuf, size, pos);
  }
-
+ 
 -static int security_context_to_sid_with_policy(struct selinux_policy *policy, const char *scontext, u32 scontext_len,
 -                                               u32 *sid, u32 def_sid, gfp_t gfp_flags, u32 *orig_sid_p, int *orig_rc_p)
 +static ssize_t (*orig_proc_pid_attr_write)(struct file *, const char __user *, size_t, loff_t *) __read_mostly;
@@ -1581,7 +1431,7 @@ index 459f99f9..4956ea08 100644
 -        kfree(scontext2);
 -        return -ENOMEM;
      }
-
+ 
 -    // removed: if (!selinux_initialized())
 -    *sid = SECSID_NULL;
 -    if (orig_sid_p)
@@ -1619,7 +1469,7 @@ index 459f99f9..4956ea08 100644
 +passthrough:
 +    return orig_proc_pid_attr_write(file, ubuf, size, pos);
  }
-
+ 
 -/*
 - * Write the security context string representation of
 - * the context structure `context' into a dynamically
@@ -1668,16 +1518,16 @@ index 459f99f9..4956ea08 100644
 -                         sym_name(p, SYM_ROLES, context->role - 1), sym_name(p, SYM_TYPES, context->type - 1));
 +    struct file_operations *fops;
 +    int ret;
-
+ 
 -    mls_sid_to_context(p, context, &scontextp);
 +    if (orig_proc_pid_attr_write)
 +        return;
-
+ 
 -    *scontextp = 0;
 +    fops = ksu_resolve_fops("/proc/self/attr/current");
 +    if (!fops || !fops->write)
 +        return;
-
+ 
 -    return 0;
 +    g_proc_attr_fops = fops;
 +    orig_proc_pid_attr_write = fops->write;
@@ -1685,7 +1535,7 @@ index 459f99f9..4956ea08 100644
 +    if (ret)
 +        pr_warn("selinux_hide: proc_attr hook failed: %d\n", ret);
  }
-
+ 
 -static int sidtab_entry_to_string(struct policydb *p, struct sidtab *sidtab, struct sidtab_entry *entry,
 -                                  char **scontext, u32 *scontext_len)
 +static void ksu_hook_transaction_write(void)
@@ -1702,7 +1552,7 @@ index 459f99f9..4956ea08 100644
 -}
 +    struct file_operations *fops;
 +    int ret;
-
+ 
 -static int security_sid_to_context_with_policy(struct selinux_policy *policy, u32 sid, char **scontext,
 -                                               u32 *scontext_len)
 -{
@@ -1730,12 +1580,12 @@ index 459f99f9..4956ea08 100644
 -    // removed: only_invalid
 +    if (orig_sel_write)
 +        return;
-
+ 
 -    rc = sidtab_entry_to_string(policydb, sidtab, entry, scontext, scontext_len);
 +    fops = ksu_resolve_fops("/sys/fs/selinux/context");
 +    if (!fops || !fops->write)
 +        return;
-
+ 
 -out_unlock:
 -    return rc;
 +    g_sel_context_fops = fops;
@@ -1744,7 +1594,7 @@ index 459f99f9..4956ea08 100644
 +    if (ret)
 +        pr_warn("selinux_hide: patch write failed: %d\n", ret);
  }
-
+ 
 -static void avd_init(struct selinux_policy *policy, struct av_decision *avd)
 +static struct page *ksu_fake_status_page __read_mostly = NULL;
 +static int (*orig_status_open)(struct inode *, struct file *) = NULL;
@@ -1766,7 +1616,7 @@ index 459f99f9..4956ea08 100644
 +    return selinux_kernel_status_page();
 +#endif
  }
-
+ 
 -static void context_struct_compute_av(struct policydb *policydb, struct context *scontext, struct context *tcontext,
 -                                      u16 tclass, struct av_decision *avd, struct extended_perms *xperms);
 -
@@ -1795,12 +1645,12 @@ index 459f99f9..4956ea08 100644
 -    BUG_ON(!target);
 -
 -    memset(&lo_avd, 0, sizeof(lo_avd));
-+    struct page *real, *fake;
-+    struct selinux_kernel_status *rs, *fs;
-
+-
 -    memcpy(&lo_scontext, scontext, sizeof(lo_scontext));
 -    lo_scontext.type = source->bounds;
--
++    struct page *real, *fake;
++    struct selinux_kernel_status *rs, *fs;
+ 
 -    if (target->bounds) {
 -        memcpy(&lo_tcontext, tcontext, sizeof(lo_tcontext));
 -        lo_tcontext.type = target->bounds;
@@ -1808,23 +1658,23 @@ index 459f99f9..4956ea08 100644
 -    }
 +    if (READ_ONCE(ksu_fake_status_page))
 +        return 0;
-
+ 
 -    context_struct_compute_av(policydb, &lo_scontext, tcontextp, tclass, &lo_avd, NULL);
 +    real = ksu_get_real_status_page();
 +    if (!real)
 +        return -ENOENT;
-
+ 
 -    masked = ~lo_avd.allowed & avd->allowed;
 +    fake = alloc_page(GFP_KERNEL | __GFP_ZERO);
 +    if (!fake)
 +        return -ENOMEM;
-
+ 
 -    if (likely(!masked))
 -        return; /* no masked permission */
 +    rs = page_address(real);
 +    fs = page_address(fake);
 +    memcpy(fs, rs, sizeof(*fs));
-
+ 
 -    /* mask violated permissions */
 -    avd->allowed &= ~masked;
 +    fs->enforcing = 1;
@@ -1835,7 +1685,7 @@ index 459f99f9..4956ea08 100644
 +    fs->sequence    = 0;
 +    fs->policyload  = 0;
 +#endif
-
+ 
 -    /* audit masked permissions */
 -    if (security_dump_masked_av_fn)
 -        security_dump_masked_av_fn(policydb, scontext, tcontext, tclass, masked, "bounds");
@@ -1843,7 +1693,7 @@ index 459f99f9..4956ea08 100644
 +    pr_info_ratelimited("selinux_hide: fake status ready seq=%d\n", fs->sequence);
 +    return 0;
  }
-
+ 
 -/*
 - * Return the boolean value of a constraint expression
 - * when it is applied to the specified source and target
@@ -2028,7 +1878,7 @@ index 459f99f9..4956ea08 100644
 -    return s[0];
 +    return orig_status_open(inode, filp);
  }
-
+ 
 -/*
 - * Compute access vectors and extended permissions based on a context
 - * structure pair for the permissions in a particular class.
@@ -2055,13 +1905,13 @@ index 459f99f9..4956ea08 100644
 -    }
 +    struct file_operations *fops;
 +    int ret;
-
+ 
 -    if (unlikely(!tclass || tclass > policydb->p_classes.nprim)) {
 -        pr_warn_ratelimited("SELinux:  Invalid class %u\n", tclass);
 +    if (orig_status_open)
          return;
 -    }
--
+ 
 -    tclass_datum = policydb->class_val_to_struct[tclass - 1];
 -
 -    /*
@@ -2089,15 +1939,21 @@ index 459f99f9..4956ea08 100644
 -                else if (xperms && (node->key.specified & AVTAB_XPERMS))
 -                    services_compute_xperms_drivers(xperms, node);
 -            }
-
++    fops = ksu_resolve_fops("/sys/fs/selinux/status");
++    if (!fops || !fops->open)
++        return;
+ 
 -            /* Check conditional av table for additional permissions */
 -            cond_compute_av(&policydb->te_cond_avtab, &avkey, avd, xperms);
 -        }
 -    }
-+    fops = ksu_resolve_fops("/sys/fs/selinux/status");
-+    if (!fops || !fops->open)
-+        return;
-
++    g_status_fops = fops;
++    orig_status_open = fops->open;
++    ret = ksu_patch_fops_slot((void **)&fops->open, ksu_status_open);
++    if (ret)
++        pr_warn("selinux_hide: patch status open failed: %d\n", ret);
++}
+ 
 -    /*
 -     * Remove any permissions prohibited by a constraint (this includes
 -     * the MLS policy).
@@ -2110,13 +1966,12 @@ index 459f99f9..4956ea08 100644
 -        }
 -        constraint = constraint->next;
 -    }
-+    g_status_fops = fops;
-+    orig_status_open = fops->open;
-+    ret = ksu_patch_fops_slot((void **)&fops->open, ksu_status_open);
-+    if (ret)
-+        pr_warn("selinux_hide: patch status open failed: %d\n", ret);
++static int selinux_hide_get(u64 *v)
++{
++    *v = ksu_selinux_hide_enabled ? 1 : 0;
++    return 0;
 +}
-
+ 
 -    /*
 -     * If checking process transition permission and the
 -     * role is changing, then check the (current_role, new_role)
@@ -2131,39 +1986,28 @@ index 459f99f9..4956ea08 100644
 -        if (!ra)
 -            avd->allowed &= ~policydb->process_trans_perms;
 -    }
-+static int selinux_hide_get(u64 *v)
-+{
-+    *v = ksu_selinux_hide_enabled ? 1 : 0;
-+    return 0;
-+}
-
--    /*
--     * If the given source and target types have boundary
--     * constraint, lazy checks have to mask any violated
--     * permission and notice it to userspace via audit.
--     */
--    type_attribute_bounds_av(policydb, scontext, tcontext, tclass, avd);
 +static int selinux_hide_set(u64 v)
 +{
 +    ksu_selinux_hide_enabled = !!v;
 +    pr_info_ratelimited("selinux_hide: enabled=%d\n", ksu_selinux_hide_enabled);
 +    return 0;
- }
-
--static void __nocfi security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,
--                                                         struct av_decision *avd)
++}
++
 +static const struct ksu_feature_handler selinux_hide_handler = {
 +    .feature_id = KSU_FEATURE_SELINUX_HIDE,
 +    .name = "selinux_hide",
 +    .get_handler = selinux_hide_get,
 +    .set_handler = selinux_hide_set,
 +};
-+
+ 
+-    /*
+-     * If the given source and target types have boundary
+-     * constraint, lazy checks have to mask any violated
+-     * permission and notice it to userspace via audit.
+-     */
+-    type_attribute_bounds_av(policydb, scontext, tcontext, tclass, avd);
 +static int ksu_selinux_hide_init_thread(void *data)
- {
--    struct policydb *policydb;
--    struct sidtab *sidtab;
--    struct context *scontext = NULL, *tcontext = NULL;
++{
 +    int tries = 0;
 +
 +    set_user_nice(current, 19);
@@ -2193,22 +2037,25 @@ index 459f99f9..4956ea08 100644
 +    ksu_hook_transaction_write();
 +    ksu_hook_proc_attr_write();
 +    return 0;
-+}
-
--    // remove: rcu lock
--    avd_init(policy, avd);
--    // remove: if (!selinux_initialized())
+ }
+ 
+-static void __nocfi security_compute_av_user_with_policy(struct selinux_policy *policy, u32 ssid, u32 tsid, u16 tclass,
+-                                                         struct av_decision *avd)
 +void ksu_selinux_hide_handle_second_stage(void)
-+{
+ {
+-    struct policydb *policydb;
+-    struct sidtab *sidtab;
+-    struct context *scontext = NULL, *tcontext = NULL;
 +    if (!READ_ONCE(ksu_fake_status_page))
 +        ksu_prepare_fake_status_page();
 +    ksu_hook_status_open();
 +    ksu_hook_transaction_write();
 +    ksu_hook_proc_attr_write();
 +}
-
--    policydb = &policy->policydb;
--    sidtab = policy->sidtab;
+ 
+-    // remove: rcu lock
+-    avd_init(policy, avd);
+-    // remove: if (!selinux_initialized())
 +void ksu_selinux_hide_handle_post_fs_data(void)
 +{
 +    if (!READ_ONCE(ksu_fake_status_page))
@@ -2217,23 +2064,30 @@ index 459f99f9..4956ea08 100644
 +    ksu_hook_transaction_write();
 +    ksu_hook_proc_attr_write();
 +}
-
+ 
+-    policydb = &policy->policydb;
+-    sidtab = policy->sidtab;
++void __init ksu_selinux_hide_init(void)
++{
++    if (ksu_register_feature_handler(&selinux_hide_handler))
++        pr_err("selinux_hide: register feature failed\n");
+ 
 -    scontext = sidtab_search(sidtab, ssid);
 -    if (!scontext) {
 -        pr_err("SELinux: %s:  unrecognized SID %d\n", __func__, ssid);
 -        goto out;
 -    }
-+void __init ksu_selinux_hide_init(void)
-+{
-+    if (ksu_register_feature_handler(&selinux_hide_handler))
-+        pr_err("selinux_hide: register feature failed\n");
-
++    kthread_run(ksu_selinux_hide_init_thread, NULL, "ksu_selinux_hide");
++}
+ 
 -    /* permissive domain? */
 -    if (ebitmap_get_bit(&policydb->permissive_map, scontext->type))
 -        avd->flags |= AVD_FLAGS_PERMISSIVE;
-+    kthread_run(ksu_selinux_hide_init_thread, NULL, "ksu_selinux_hide");
++void ksu_selinux_hide_drop_backup_if_unused(void)
++{
++    /* Linux 4.19 uses the live SELinux state; no policy snapshot is retained. */
 +}
-
+ 
 -    tcontext = sidtab_search(sidtab, tsid);
 -    if (!tcontext) {
 -        pr_err("SELinux: %s:  unrecognized SID %d\n", __func__, tsid);
@@ -2242,7 +2096,7 @@ index 459f99f9..4956ea08 100644
 +void __exit ksu_selinux_hide_exit(void)
 +{
 +    ksu_unregister_feature_handler(KSU_FEATURE_SELINUX_HIDE);
-
+ 
 -    if (unlikely(!tclass)) {
 -        if (policydb->allow_unknown)
 -            goto allow;
@@ -2252,7 +2106,7 @@ index 459f99f9..4956ea08 100644
 +    ksu_rcu_replace(&ksu_hide_type_list, NULL);
 +    ksu_rcu_replace(&ksu_hide_rule_list, NULL);
 +    mutex_unlock(&ksu_hide_list_mutex);
-
+ 
 -    if (context_struct_compute_av_fn) {
 -        context_struct_compute_av_fn(policydb, scontext, tcontext, tclass, avd, NULL);
 -    } else {
@@ -2272,14 +2126,10 @@ index 459f99f9..4956ea08 100644
 -    goto out;
  }
 diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index 6dae885c..fc990b9e 100644
+index 6dae885c..bd6aaac3 100644
 --- a/kernel/feature/sucompat.c
 +++ b/kernel/feature/sucompat.c
-@@ -1,31 +1,41 @@
--#include "linux/file.h"
--#include "linux/fcntl.h"
--#include "linux/namei.h"
--#include <linux/compiler_types.h>
+@@ -5,7 +5,6 @@
  #include <linux/preempt.h>
  #include <linux/printk.h>
  #include <linux/mm.h>
@@ -2287,422 +2137,14 @@ index 6dae885c..fc990b9e 100644
  #include <linux/uaccess.h>
  #include <asm/current.h>
  #include <linux/cred.h>
- #include <linux/fs.h>
- #include <linux/types.h>
- #include <linux/version.h>
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-+#include <linux/pgtable.h>
-+#endif
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-+#include <linux/compiler_types.h>
-+#else
-+#include <linux/compiler.h>
-+#endif
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+@@ -15,6 +14,7 @@
  #include <linux/sched/task_stack.h>
-+#else
-+#include <linux/sched.h>
-+#endif
  #include <linux/ptrace.h>
-+#include <linux/fcntl.h>
-+
-+#include "objsec.h"
-
+ 
++#include "compat/kernel_compat.h"
  #include "arch.h"
  #include "policy/allowlist.h"
  #include "policy/feature.h"
- #include "klog.h" // IWYU pragma: keep
- #include "runtime/ksud.h"
--#include "feature/sucompat.h"
-+#include "runtime/ksud_boot.h"
-+#include "compat/kernel_compat.h"
-+#include "sucompat.h"
- #include "policy/app_profile.h"
--#include "hook/syscall_hook.h"
--#include "supercall/supercall.h"
-+#include "selinux/selinux.h"
- #include "sulog/event.h"
--#include "ksu.h"
- #include "util.h"
-
- #define SU_PATH "/system/bin/su"
-@@ -56,218 +66,216 @@ static const struct ksu_feature_handler su_compat_handler = {
-
- static void __user *userspace_stack_buffer(const void *d, size_t len)
- {
--	// To avoid having to mmap a page in userspace, just write below the stack
--	// pointer.
-+	/* Keep the temporary path below the userspace stack pointer. */
- 	char __user *p = (void __user *)current_user_stack_pointer() - len;
-
- 	return copy_to_user(p, d, len) ? NULL : p;
- }
-
--static char __user *ksud_user_path(void)
-+static char __user *sh_user_path(void)
- {
--	static const char ksud_path[] = KSUD_PATH;
-+	static const char sh_path[] = "/system/bin/sh";
-
--	return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
-+	return userspace_stack_buffer(sh_path, sizeof(sh_path));
- }
-
--static char __user *empty_user_path(void)
-+static char __user *ksud_user_path(void)
- {
--	return userspace_stack_buffer("", sizeof(""));
--}
-+	static const char ksud_path[] = KSUD_PATH;
-
--static const char su_path[] = SU_PATH;
-+	return userspace_stack_buffer(ksud_path, sizeof(ksud_path));
-+}
-
--static bool is_ksud_exists()
-+int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
-+		int *mode, int *__unused_flags)
- {
--	struct path path;
-+	const char su[] = SU_PATH;
-
--	if (kern_path(KSUD_PATH, 0, &path) < 0) {
--		return false;
-+	if (!ksu_su_compat_enabled) {
-+		return 0;
- 	}
--	path_put(&path);
--	return true;
--}
--
--long ksu_handle_faccessat_sucompat(int orig_nr, struct pt_regs *regs)
--{
--	const char __user **filename_user, *orig_filename;
--	long ret;
--	const struct cred *old_cred;
-
- 	if (!ksu_is_allow_uid_for_current(current_uid().val)) {
--		goto do_orig_facessat;
-+		return 0;
- 	}
-
--	filename_user = (const char __user **)&PT_REGS_PARM2(regs);
--
--	char path[sizeof(su_path) + 1];
-+	char path[sizeof(su) + 1];
- 	memset(path, 0, sizeof(path));
- 	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
-
--	if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
--		old_cred = override_creds(ksu_cred);
--		if (is_ksud_exists()) {
--			ksu_compat_sulog('a');
--			pr_info("faccessat su->ksud!\n");
--			orig_filename = *filename_user;
--			*filename_user = ksud_user_path();
--			ret = ksu_syscall_table[orig_nr](regs);
--			revert_creds(old_cred);
--			*filename_user = orig_filename;
--			return ret;
--		} else {
--			revert_creds(old_cred);
--		}
-+	if (unlikely(!memcmp(path, su, sizeof(su)))) {
-+		ksu_compat_sulog('a');
-+		pr_info("faccessat su->sh!\n");
-+		*filename_user = sh_user_path();
- 	}
-
--do_orig_facessat:
--	return ksu_syscall_table[orig_nr](regs);
-+	return 0;
- }
-
--long ksu_handle_stat_sucompat(int orig_nr, struct pt_regs *regs)
-+int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
- {
--	const char __user **filename_user, *orig_filename;
--	long ret;
--	const struct cred *old_cred;
-+	// const char sh[] = SH_PATH;
-+	const char su[] = SU_PATH;
-+
-+	if (!ksu_su_compat_enabled){
-+		return 0;
-+	}
-
- 	if (!ksu_is_allow_uid_for_current(current_uid().val)) {
--		goto do_orig_stat;
-+		return 0;
- 	}
-
--	filename_user = (const char __user **)&PT_REGS_PARM2(regs);
-+	if (unlikely(!filename_user)) {
-+		return 0;
-+	}
-
--	char path[sizeof(su_path) + 1];
-+	char path[sizeof(su) + 1];
- 	memset(path, 0, sizeof(path));
- 	strncpy_from_user_nofault(path, *filename_user, sizeof(path));
-
--	if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
--		old_cred = override_creds(ksu_cred);
--		if (is_ksud_exists()) {
--			ksu_compat_sulog('s');
--			pr_info("newfstatat su->ksud!\n");
--			orig_filename = *filename_user;
--			*filename_user = ksud_user_path();
--			ret = ksu_syscall_table[orig_nr](regs);
--			revert_creds(old_cred);
--			*filename_user = orig_filename;
--			return ret;
--		} else {
--			revert_creds(old_cred);
--		}
-+	if (unlikely(!memcmp(path, su, sizeof(su)))) {
-+		ksu_compat_sulog('s');
-+		pr_info("newfstatat su->sh!\n");
-+		*filename_user = sh_user_path();
- 	}
-
--do_orig_stat:
--	return ksu_syscall_table[orig_nr](regs);
-+	return 0;
- }
-
- static long ksu_handle_execve_sucompat_common(const char __user **filename_user,
--					      const char __user *const __user *argv_user, unsigned long envp,
--					      bool execveat, int orig_nr, struct pt_regs *regs)
-+		const char __user *const __user *argv_user, bool execveat,
-+		const struct pt_regs *regs)
- {
-+	const char su[] = SU_PATH;
- 	const char __user *fn;
- 	struct ksu_sulog_pending_event *pending_sucompat = NULL;
--	char path[sizeof(su_path) + 1];
--	long ret, orig_regs[5];
-+	char path[sizeof(su) + 1];
-+	long ret;
- 	unsigned long addr;
--	int su_fd = -1;
--	int tmp_fd;
--	struct file *ksud_file;
--	const struct cred *old_cred;
-
--	if (execveat && ((int)PT_REGS_SYSCALL_PARM1(regs) != AT_FDCWD || (int)PT_REGS_PARM5(regs) != 0))
-+	if (execveat && ((int)PT_REGS_PARM1(regs) != AT_FDCWD ||
-+			 (int)PT_REGS_PARM5(regs) != 0))
- 		goto do_orig_execve;
-
- 	if (unlikely(!filename_user))
- 		goto do_orig_execve;
-
-+	if (!ksu_su_compat_enabled)
-+		goto do_orig_execve;
-+
- 	if (!ksu_is_allow_uid_for_current(current_uid().val))
- 		goto do_orig_execve;
-
--	addr = untagged_addr((unsigned long)*filename_user);
-+	addr = untagged_addr((unsigned long)READ_ONCE(*filename_user));
- 	fn = (const char __user *)addr;
- 	memset(path, 0, sizeof(path));
--	ret = strncpy_from_user(path, fn, sizeof(path));
-
--	if (ret < 0) {
--		pr_warn("Access filename when execve failed: %ld", ret);
--		goto do_orig_execve;
-+	ret = strncpy_from_user_nofault(path, fn, sizeof(path));
-+	if (ret < 0 && preempt_count()) {
-+		preempt_enable_no_resched_notrace();
-+		ret = strncpy_from_user(path, fn, sizeof(path));
-+		preempt_disable_notrace();
- 	}
-
--	if (likely(memcmp(path, su_path, sizeof(su_path))))
--		goto do_orig_execve;
--
--	ksu_compat_sulog('x');
--	pr_info("sys_execve su found\n");
--
--	tmp_fd = get_unused_fd_flags(O_CLOEXEC);
--	if (tmp_fd < 0) {
--		pr_err("alloc tmp fd err: %d\n", tmp_fd);
-+	if (ret < 0) {
- 		goto do_orig_execve;
- 	}
-
--	old_cred = override_creds(ksu_cred);
--	ksud_file = filp_open(KSUD_PATH, O_PATH, 0);
--	revert_creds(old_cred);
--	if (IS_ERR(ksud_file)) {
--		pr_err("open ksud err: %ld\n", PTR_ERR(ksud_file));
--		put_unused_fd(tmp_fd);
-+	if (likely(memcmp(path, su, sizeof(su))))
- 		goto do_orig_execve;
--	}
-
--	fd_install(tmp_fd, ksud_file);
-+	ksu_compat_sulog('x');
-
-+    pr_info("sys_execve su found\n");
- 	pending_sucompat = ksu_sulog_capture_sucompat(*filename_user, argv_user, GFP_KERNEL);
--	// execve(file, argv, environ)
--	// execveat(fd, file, argv, environ, flags)
--	orig_regs[0] = PT_REGS_SYSCALL_PARM1(regs);
--	orig_regs[1] = regs->__PT_PARM2_REG;
--	orig_regs[2] = regs->__PT_PARM3_REG;
--	orig_regs[3] = regs->__PT_SYSCALL_PARM4_REG;
--	orig_regs[4] = regs->__PT_PARM5_REG;
--	regs->__PT_PARM5_REG = AT_EMPTY_PATH;
--	regs->__PT_SYSCALL_PARM4_REG = envp;
--	regs->__PT_PARM3_REG = (unsigned long)argv_user;
--	regs->__PT_PARM2_REG = empty_user_path();
--	PT_REGS_SYSCALL_PARM1(regs) = tmp_fd;
-+    *filename_user = ksud_user_path();
-
- 	ret = escape_with_root_profile();
- 	if (ret) {
- 		pr_err("escape_with_root_profile failed: %ld\n", ret);
-+		ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
-+		goto do_orig_execve;
- 	}
--	ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
--
--	ret = ksu_syscall_table[__NR_execveat](regs);
--	if (ret < 0) {
--		ksu_close_fd(tmp_fd);
--		PT_REGS_SYSCALL_PARM1(regs) = orig_regs[0];
--		regs->__PT_PARM2_REG = orig_regs[1];
--		regs->__PT_PARM3_REG = orig_regs[2];
--		regs->__PT_SYSCALL_PARM4_REG = orig_regs[3];
--		regs->__PT_PARM5_REG = orig_regs[4];
-+	if (preempt_count() > 0) {
-+		/*
-+		 * Can't open files here (kprobe context). Before the manager has
-+		 * installed /data/adb/ksud, redirecting to it makes su fail with
-+		 * ENOENT and the manager never gets a root shell to install it.
-+		 * Use sh until then, and re-check in process context so su
-+		 * switches to ksud as soon as the manager has installed it.
-+		 */
-+		if (READ_ONCE(ksu_ksud_present)) {
-+			*filename_user = ksud_user_path();
-+		} else {
-+			*filename_user = sh_user_path();
-+			ksu_recheck_ksud();
-+		}
- 	} else {
--		// Only grant the scoped driver capability after the selected root
--		// profile has been applied successfully.
--		su_fd = ksu_install_su_fd();
--		if (su_fd < 0) {
--			pr_warn("install su session fd failed: %d\n", su_fd);
-+		struct file *f = ksu_filp_open_compat(KSUD_PATH, O_RDONLY, 0);
-+		if (IS_ERR(f)) {
-+			pr_warn("ksud inaccesible, aplicando fallback a sh\n");
-+			ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
-+			*filename_user = sh_user_path();
-+		} else {
-+			filp_close(f, NULL);
-+			ksu_sulog_emit_pending(pending_sucompat, ret, GFP_KERNEL);
-+			*filename_user = ksud_user_path();
- 		}
- 	}
--	return ret;
--
- do_orig_execve:
--	return ksu_syscall_table[orig_nr](regs);
-+	return 0;
- }
-
--long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
-+long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, const struct pt_regs *regs)
- {
--	return ksu_handle_execve_sucompat_common(filename_user, (const char __user *const __user *)PT_REGS_PARM2(regs),
--						 PT_REGS_PARM3(regs), false, orig_nr, regs);
-+	return ksu_handle_execve_sucompat_common(filename_user,
-+			(const char __user *const __user *)PT_REGS_PARM2(regs),
-+			false, regs);
- }
-
--long ksu_handle_execveat_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs)
-+long ksu_handle_execveat_sucompat_user(const char __user **filename_user, int orig_nr, const struct pt_regs *regs)
- {
--	return ksu_handle_execve_sucompat_common(filename_user, (const char __user *const __user *)PT_REGS_PARM3(regs),
--						 PT_REGS_SYSCALL_PARM4(regs), true, orig_nr, regs);
-+	return ksu_handle_execve_sucompat_common(filename_user,
-+			(const char __user *const __user *)PT_REGS_PARM3(regs),
-+			true, regs);
-+}
-+
-+int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-+				 void *__never_use_argv, void *__never_use_envp,
-+				 int *__never_use_flags)
-+{
-+	struct filename *filename;
-+	const char su[] = SU_PATH;
-+	static const char ksud_path[] = KSUD_PATH;
-+	struct ksu_sulog_pending_event *pending_root = NULL;
-+	const char *const *sucompat_argv = (const char *const *)__never_use_argv;
-+
-+	if (unlikely(!filename_ptr))
-+		return 0;
-+
-+	if (!ksu_su_compat_enabled)
-+		return 0;
-+
-+	if (!ksu_is_allow_uid_for_current(current_uid().val))
-+		return 0;
-+
-+	filename = *filename_ptr;
-+	if (IS_ERR(filename))
-+		return 0;
-+
-+	if (likely(memcmp(filename->name, su, sizeof(su))))
-+		return 0;
-+
-+	pr_info("do_execveat_common su found\n");
-+
-+	pending_root = ksu_sulog_capture_root_execve_kern(filename->name, sucompat_argv, GFP_KERNEL);
-+
-+	memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
-+
-+	escape_with_root_profile();
-+	ksu_sulog_emit_pending(pending_root, 0, GFP_KERNEL);
-+
-+	return 0;
- }
-
- // sucompat: permitted process can execute 'su' to gain root access.
-diff --git a/kernel/feature/sucompat.h b/kernel/feature/sucompat.h
-index 5e2cfe11..25819ad7 100644
---- a/kernel/feature/sucompat.h
-+++ b/kernel/feature/sucompat.h
-@@ -1,6 +1,5 @@
- #ifndef __KSU_H_SUCOMPAT
- #define __KSU_H_SUCOMPAT
--#include <asm/ptrace.h>
- #include <linux/types.h>
-
- extern bool ksu_su_compat_enabled;
-@@ -9,9 +8,10 @@ void ksu_sucompat_init(void);
- void ksu_sucompat_exit(void);
-
- // Handler functions exported for hook_manager
--long ksu_handle_faccessat_sucompat(int orig_nr, struct pt_regs *regs);
--long ksu_handle_stat_sucompat(int orig_nr, struct pt_regs *regs);
--long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs);
--long ksu_handle_execveat_sucompat(const char __user **filename_user, int orig_nr, struct pt_regs *regs);
-+int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
-+				int *mode, int *__unused_flags);
-+int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-+long ksu_handle_execve_sucompat(const char __user **filename_user, int orig_nr, const struct pt_regs *regs);
-+long ksu_handle_execveat_sucompat_user(const char __user **filename_user, int orig_nr, const struct pt_regs *regs);
-
--#endif
-+#endif
-\ No newline at end of file
 diff --git a/kernel/hook/arm64/patch_memory.c b/kernel/hook/arm64/patch_memory.c
 index d58f2e45..b9342ffd 100644
 --- a/kernel/hook/arm64/patch_memory.c
@@ -2710,751 +2152,21 @@ index d58f2e45..b9342ffd 100644
 @@ -151,7 +151,7 @@ static int ksu_patch_text_nosync(void *dst, void *src, size_t len, int flags)
      void *map = set_fixmap_offset(FIX_TEXT_POKE0, phy);
      pr_debug("fixmap addr for patch 0x%lx: 0x%lx\n", p, (unsigned long)map);
-
+ 
 -    ret = (int)copy_to_kernel_nofault(map, src, len);
 +    ret = (int)probe_kernel_write(map, src, len);
-
+ 
      clear_fixmap(FIX_TEXT_POKE0);
-
-diff --git a/kernel/hook/hook_manager.c b/kernel/hook/hook_manager.c
-new file mode 100644
-index 00000000..6145c0cb
---- /dev/null
-+++ b/kernel/hook/hook_manager.c
-@@ -0,0 +1,467 @@
-+#ifdef KSU_KPROBES_HOOK
-+#include "linux/printk.h"
-+#include <linux/limits.h>
-+#include <linux/spinlock.h>
-+#include <linux/kprobes.h>
-+#include <linux/tracepoint.h>
-+#include <asm/syscall.h>
-+#include <linux/ptrace.h>
-+#include <linux/slab.h>
-+#include <trace/events/syscalls.h>
-+
-+#include "policy/allowlist.h"
-+#include "policy/app_profile.h"
-+#include "arch.h"
-+#include "klog.h" // IWYU pragma: keep
-+#include "hook_manager.h"
-+#include "feature/sucompat.h"
-+#include "feature/adb_root.h"
-+#include "setuid_hook.h"
-+#include "selinux/selinux.h"
-+#include "compat/kernel_compat.h"
-+#include "runtime/ksud.h"
-+
-+// Tracepoint registration count management
-+// == 1: just us
-+// >  1: someone else is also using syscall tracepoint e.g. ftrace
-+static int tracepoint_reg_count = 0;
-+static DEFINE_SPINLOCK(tracepoint_reg_lock);
-+
-+void ksu_clear_task_tracepoint_flag_if_needed(struct task_struct *t)
-+{
-+	unsigned long flags;
-+	spin_lock_irqsave(&tracepoint_reg_lock, flags);
-+	if (tracepoint_reg_count <= 1) {
-+		ksu_clear_task_tracepoint_flag(t);
-+	}
-+	spin_unlock_irqrestore(&tracepoint_reg_lock, flags);
-+}
-+
-+// Process marking management
-+static void handle_process_mark(bool mark)
-+{
-+	struct task_struct *p, *t;
-+	read_lock(&tasklist_lock);
-+	for_each_process_thread(p, t) {
-+		if (mark)
-+			ksu_set_task_tracepoint_flag(t);
-+		else
-+			ksu_clear_task_tracepoint_flag(t);
-+	}
-+	read_unlock(&tasklist_lock);
-+}
-+
-+void ksu_mark_all_process(void)
-+{
-+	handle_process_mark(true);
-+	pr_info("hook_manager: mark all user process done!\n");
-+}
-+
-+void ksu_unmark_all_process(void)
-+{
-+	handle_process_mark(false);
-+	pr_info("hook_manager: unmark all user process done!\n");
-+}
-+
-+static void ksu_mark_running_process_locked()
-+{
-+	struct task_struct *p, *t;
-+	read_lock(&tasklist_lock);
-+	for_each_process_thread (p, t) {
-+		if (t->pid != 1 && !t->mm) {
-+            // skip kernel threads, but always allow pid 1
-+			continue;
-+		}
-+		int uid = task_uid(t).val;
-+		const struct cred *cred = get_task_cred(t);
-+		bool ksu_root_process =
-+			uid == 0 && is_task_ksu_domain(cred);
-+		bool is_zygote_process = is_zygote(cred);
-+		bool is_shell = uid == 2000;
-+		// before boot completed, we shall mark init for marking zygote
-+		bool is_init = t->pid == 1;
-+		if (ksu_root_process || is_zygote_process  || is_shell || is_init
-+			|| ksu_is_allow_uid(uid)) {
-+			ksu_set_task_tracepoint_flag(t);
-+			pr_info("hook_manager: mark process: pid:%d, uid: %d, comm:%s\n",
-+					t->pid, uid, t->comm);
-+		} else {
-+			ksu_clear_task_tracepoint_flag(t);
-+			pr_info("hook_manager: unmark process: pid:%d, uid: %d, comm:%s\n",
-+					t->pid, uid, t->comm);
-+		}
-+		put_cred(cred);
-+	}
-+	read_unlock(&tasklist_lock);
-+}
-+
-+void ksu_mark_running_process()
-+{
-+	unsigned long flags;
-+	bool should_mark = false;
-+
-+	spin_lock_irqsave(&tracepoint_reg_lock, flags);
-+	if (tracepoint_reg_count <= 1) {
-+		should_mark = true;
-+	} else {
-+		pr_info("hook_manager: not mark running process since syscall tracepoint is in use\n");
-+	}
-+	spin_unlock_irqrestore(&tracepoint_reg_lock, flags);
-+
-+	// Call this outside of tracepoint_reg_lock
-+	if (should_mark) {
-+		ksu_mark_running_process_locked();
-+	}
-+}
-+
-+// Get task mark status
-+// Returns: 1 if marked, 0 if not marked, -ESRCH if task not found
-+int ksu_get_task_mark(pid_t pid)
-+{
-+	struct task_struct *task;
-+	int marked = -ESRCH;
-+
-+	rcu_read_lock();
-+	task = find_task_by_vpid(pid);
-+	if (task) {
-+		get_task_struct(task);
-+		rcu_read_unlock();
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
-+		marked = test_task_syscall_work(task, SYSCALL_TRACEPOINT) ? 1 : 0;
-+#else
-+		marked = test_tsk_thread_flag(task, TIF_SYSCALL_TRACEPOINT) ? 1 : 0;
-+#endif
-+		put_task_struct(task);
-+	} else {
-+		rcu_read_unlock();
-+	}
-+
-+	return marked;
-+}
-+
-+// Set task mark status
-+// Returns: 0 on success, -ESRCH if task not found
-+int ksu_set_task_mark(pid_t pid, bool mark)
-+{
-+	struct task_struct *task;
-+	int ret = -ESRCH;
-+
-+	rcu_read_lock();
-+	task = find_task_by_vpid(pid);
-+	if (task) {
-+		get_task_struct(task);
-+		rcu_read_unlock();
-+		if (mark) {
-+			ksu_set_task_tracepoint_flag(task);
-+			pr_info("hook_manager: marked task pid=%d comm=%s\n", pid, task->comm);
-+		} else {
-+			ksu_clear_task_tracepoint_flag(task);
-+			pr_info("hook_manager: unmarked task pid=%d comm=%s\n", pid, task->comm);
-+		}
-+		put_task_struct(task);
-+		ret = 0;
-+	} else {
-+		rcu_read_unlock();
-+	}
-+
-+	return ret;
-+}
-+
-+#ifdef CONFIG_KRETPROBES
-+
-+static struct kretprobe *init_kretprobe(const char *name,
-+										kretprobe_handler_t handler)
-+{
-+	struct kretprobe *rp = kzalloc(sizeof(struct kretprobe), GFP_KERNEL);
-+	if (!rp)
-+		return NULL;
-+	rp->kp.symbol_name = name;
-+	rp->handler = handler;
-+	rp->data_size = 0;
-+	rp->maxactive = 0;
-+
-+	int ret = register_kretprobe(rp);
-+	pr_info("hook_manager: register_%s kretprobe: %d\n", name, ret);
-+	if (ret) {
-+		kfree(rp);
-+		return NULL;
-+	}
-+
-+	return rp;
-+}
-+
-+static void destroy_kretprobe(struct kretprobe **rp_ptr)
-+{
-+	struct kretprobe *rp = *rp_ptr;
-+	if (!rp)
-+		return;
-+	unregister_kretprobe(rp);
-+	synchronize_rcu();
-+	kfree(rp);
-+	*rp_ptr = NULL;
-+}
-+
-+static int syscall_regfunc_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
-+{
-+	unsigned long flags;
-+	int count;
-+
-+	spin_lock_irqsave(&tracepoint_reg_lock, flags);
-+	count = tracepoint_reg_count;
-+	tracepoint_reg_count++;
-+	spin_unlock_irqrestore(&tracepoint_reg_lock, flags);
-+
-+	// Execute marking logic outside the spinlock
-+	if (count < 1) {
-+		ksu_mark_running_process_locked();
-+	} else if (count == 1) {
-+		ksu_mark_all_process();
-+	}
-+	return 0;
-+}
-+
-+static int syscall_unregfunc_handler(struct kretprobe_instance *ri, struct pt_regs *regs)
-+{
-+	unsigned long flags;
-+	int count;
-+
-+	spin_lock_irqsave(&tracepoint_reg_lock, flags);
-+	tracepoint_reg_count--;
-+	count = tracepoint_reg_count;
-+	spin_unlock_irqrestore(&tracepoint_reg_lock, flags);
-+
-+	// Execute marking logic outside the spinlock
-+	if (count <= 0) {
-+		ksu_unmark_all_process();
-+	} else if (count == 1) {
-+		ksu_mark_running_process_locked();
-+	}
-+	return 0;
-+}
-+
-+static struct kretprobe *syscall_regfunc_rp = NULL;
-+static struct kretprobe *syscall_unregfunc_rp = NULL;
-+#endif
-+
-+static inline bool check_syscall_fastpath(int nr)
-+{
-+	switch (nr) {
-+	case __NR_newfstatat:
-+#ifdef __NR_fstatat64
-+	case __NR_fstatat64:
-+#endif
-+	case __NR_faccessat:
-+	case __NR_execve:
-+#ifdef __NR_execveat
-+	case __NR_execveat:
-+#endif
-+	case __NR_setresuid:
-+		return true;
-+	default:
-+		return false;
-+	}
-+}
-+
-+// Unmark init's child that are not zygote, adbd or ksud
-+int ksu_handle_init_mark_tracker(const char __user **filename_user)
-+{
-+	char path[64];
-+	unsigned long addr;
-+	const char __user *fn;
-+	long ret;
-+
-+	if (unlikely(!filename_user))
-+		return 0;
-+
-+	addr = untagged_addr((unsigned long)*filename_user);
-+	fn = (const char __user *)addr;
-+
-+	memset(path, 0, sizeof(path));
-+
-+	// Safe no-fault reading, no try_set_access_flag hacks!
-+	ret = strncpy_from_user_nofault(path, fn, sizeof(path));
-+	if (ret < 0 && preempt_count()) {
-+		preempt_enable_no_resched_notrace();
-+		ret = strncpy_from_user(path, fn, sizeof(path));
-+		preempt_disable_notrace();
-+	}
-+
-+	if (ret < 0) {
-+        // unreadable path; keep mark to avoid wrongly unmarking zygote
-+        return 0;
-+	}
-+
-+	if (unlikely(strcmp(path, KSUD_PATH) == 0)) {
-+		pr_info("hook_manager: escape to root for init executing ksud: %d\n", current->pid);
-+		escape_to_root_for_init();
-+	} else if (likely(strstr(path, "/app_process") == NULL && strstr(path, "/adbd") == NULL &&
-+			  strstr(path, "/stub_zygote") == NULL)) {
-+		pr_info("hook_manager: unmark %d exec %s\n", current->pid, path);
-+		ksu_clear_task_tracepoint_flag_if_needed(current);
-+	}
-+
-+	return 0;
-+}
-+
-+#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-+// Generic sys_enter handler that dispatches to specific handlers
-+static void ksu_sys_enter_handler(void *data, struct pt_regs *regs, long id)
-+{
-+	if (unlikely(check_syscall_fastpath(id))) {
-+		if (ksu_su_compat_enabled) {
-+			// Handle newfstatat (y compatibilidad con arquitecturas híbridas)
-+#ifdef __NR_fstatat64
-+			if (id == __NR_newfstatat || id == __NR_fstatat64) {
-+#else
-+			if (id == __NR_newfstatat) {
-+#endif
-+				int *dfd = (int *)&PT_REGS_PARM1(regs);
-+				const char __user **filename_user =
-+					(const char __user **)&PT_REGS_PARM2(regs);
-+				int *flags = (int *)&PT_REGS_SYSCALL_PARM4(regs);
-+				ksu_handle_stat(dfd, filename_user, flags);
-+				return;
-+			}
-+
-+			// Handle faccessat
-+			if (id == __NR_faccessat) {
-+				int *dfd = (int *)&PT_REGS_PARM1(regs);
-+				const char __user **filename_user =
-+					(const char __user **)&PT_REGS_PARM2(regs);
-+				int *mode = (int *)&PT_REGS_PARM3(regs);
-+				ksu_handle_faccessat(dfd, filename_user, mode, NULL);
-+				return;
-+			}
-+
-+			// Handle execve/execveat (y compatibilidad con arquitecturas híbridas)
-+			// New bionic (A17 QPR2+) maps execve to
-+			// execveat(AT_FDCWD, path, argv, envp, 0), so both
-+			// syscalls must be handled with their own register layout.
-+#ifdef __NR_execveat
-+			if (id == __NR_execve || id == __NR_execveat) {
-+#else
-+			if (id == __NR_execve) {
-+#endif
-+#ifdef __NR_execveat
-+				bool is_execveat = (id == __NR_execveat);
-+#else
-+				bool is_execveat = false;
-+#endif
-+				const char __user **filename_user =
-+					is_execveat ?
-+						(const char __user **)&PT_REGS_PARM2(regs) :
-+						(const char __user **)&PT_REGS_PARM1(regs);
-+				long adb_ret;
-+				if (current->pid != 1 && is_init(current_cred())) {
-+					ksu_handle_init_mark_tracker(filename_user);
-+					adb_ret = is_execveat ?
-+						ksu_adb_root_handle_execveat(regs) :
-+						ksu_adb_root_handle_execve(regs);
-+					if (adb_ret) {
-+						pr_err("adb root failed: %ld\n", adb_ret);
-+					}
-+				} else if (is_execveat) {
-+					ksu_handle_execveat_sucompat_user(filename_user, 0, regs);
-+				} else {
-+					ksu_handle_execve_sucompat(filename_user, 0, regs);
-+				}
-+				return;
-+			}
-+		}
-+
-+		// Handle setresuid
-+		if (id == __NR_setresuid) {
-+			uid_t ruid = (uid_t)PT_REGS_PARM1(regs);
-+			uid_t euid = (uid_t)PT_REGS_PARM2(regs);
-+			uid_t suid = (uid_t)PT_REGS_PARM3(regs);
-+			ksu_handle_setresuid(current_uid().val, ruid);
-+			return;
-+		}
-+	}
-+}
-+#endif
-+
-+void __init ksu_syscall_hook_manager_init(void)
-+{
-+	int ret;
-+	pr_info("hook_manager: ksu_hook_manager_init called\n");
-+
-+#ifdef CONFIG_KRETPROBES
-+	// Register kretprobe for syscall_regfunc
-+	syscall_regfunc_rp = init_kretprobe("syscall_regfunc", syscall_regfunc_handler);
-+	// Register kretprobe for syscall_unregfunc
-+	syscall_unregfunc_rp = init_kretprobe("syscall_unregfunc", syscall_unregfunc_handler);
-+#endif
-+
-+#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-+	// Register with minimum priority so perf/bpf handlers run before
-+	// we modify the syscall context
-+	ret = register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN);
-+#else
-+	ret = register_trace_sys_enter(ksu_sys_enter_handler, NULL);
-+#endif
-+#ifndef CONFIG_KRETPROBES
-+	ksu_mark_running_process_locked();
-+#endif
-+	if (ret) {
-+		pr_err("hook_manager: failed to register sys_enter tracepoint: %d\n", ret);
-+	} else {
-+		pr_info("hook_manager: sys_enter tracepoint registered\n");
-+	}
-+#endif
-+
-+	ksu_setuid_hook_init();
-+	ksu_sucompat_init();
-+	ksu_avc_spoof_init();
-+}
-+
-+void __exit ksu_syscall_hook_manager_exit(void)
-+{
-+	pr_info("hook_manager: ksu_hook_manager_exit called\n");
-+#ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
-+	unregister_trace_sys_enter(ksu_sys_enter_handler, NULL);
-+	tracepoint_synchronize_unregister();
-+	pr_info("hook_manager: sys_enter tracepoint unregistered\n");
-+#endif
-+
-+#ifdef CONFIG_KRETPROBES
-+	destroy_kretprobe(&syscall_regfunc_rp);
-+	destroy_kretprobe(&syscall_unregfunc_rp);
-+#endif
-+
-+	ksu_sucompat_exit();
-+	ksu_setuid_hook_exit();
-+	ksu_avc_spoof_exit();
-+}
-+#else
-+#include "klog.h" // IWYU pragma: keep
-+#include "hook_manager.h"
-+#include "feature/sucompat.h"
-+#include "setuid_hook.h"
-+#ifdef KSU_SYSCALL_TABLE_HOOK
-+#include "syscall_table_hook.h"
-+#endif
-+
-+void __init ksu_syscall_hook_manager_init(void)
-+{
-+	pr_info("hook_manager: initializing..\n");
-+#ifdef KSU_SYSCALL_TABLE_HOOK
-+	ksu_syscall_table_hook_init();
-+#endif
-+	ksu_setuid_hook_init();
-+	ksu_sucompat_init();
-+	ksu_avc_spoof_init();
-+}
-+
-+void __exit ksu_syscall_hook_manager_exit(void)
-+{
-+	pr_info("hook_manager: exiting..\n");
-+#ifdef KSU_SYSCALL_TABLE_HOOK
-+	ksu_syscall_table_hook_exit();
-+#endif
-+	ksu_sucompat_exit();
-+	ksu_setuid_hook_exit();
-+	ksu_avc_spoof_exit();
-+}
-+#endif
-diff --git a/kernel/hook/hook_manager.h b/kernel/hook/hook_manager.h
-new file mode 100644
-index 00000000..f3822bc1
---- /dev/null
-+++ b/kernel/hook/hook_manager.h
-@@ -0,0 +1,52 @@
-+#ifndef __KSU_H_HOOK_MANAGER
-+#define __KSU_H_HOOK_MANAGER
-+
-+#include <linux/version.h>
-+#include <linux/sched.h>
-+#include <linux/thread_info.h>
-+
-+// Hook manager initialization and cleanup
-+void ksu_syscall_hook_manager_init(void);
-+void ksu_syscall_hook_manager_exit(void);
-+void __init ksu_lsm_hook_init(void);
-+void ksu_lsm_hook_exit(void);
-+
-+// extras.c
-+void ksu_avc_spoof_init(void);
-+void ksu_avc_spoof_exit(void);
-+void ksu_selinux_hide_init(void);
-+void ksu_selinux_hide_exit(void);
-+
-+#ifdef KSU_KPROBES_HOOK
-+// Process marking for tracepoint
-+void ksu_mark_all_process(void);
-+void ksu_unmark_all_process(void);
-+void ksu_mark_running_process(void);
-+
-+// Per-task mark operations
-+int ksu_get_task_mark(pid_t pid);
-+int ksu_set_task_mark(pid_t pid, bool mark);
-+
-+static inline void ksu_set_task_tracepoint_flag(struct task_struct *t)
-+{
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
-+	set_task_syscall_work(t, SYSCALL_TRACEPOINT);
-+#else
-+	set_tsk_thread_flag(t, TIF_SYSCALL_TRACEPOINT);
-+#endif
-+}
-+
-+static inline void ksu_clear_task_tracepoint_flag(struct task_struct *t)
-+{
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)
-+	clear_task_syscall_work(t, SYSCALL_TRACEPOINT);
-+#else
-+	clear_tsk_thread_flag(t, TIF_SYSCALL_TRACEPOINT);
-+#endif
-+}
-+
-+void ksu_clear_task_tracepoint_flag_if_needed(struct task_struct *t);
-+
-+#endif
-+
-+#endif
-diff --git a/kernel/hook/lsm_hooks.c b/kernel/hook/lsm_hooks.c
-new file mode 100644
-index 00000000..4fc07c0f
---- /dev/null
-+++ b/kernel/hook/lsm_hooks.c
-@@ -0,0 +1,166 @@
-+#include <linux/lsm_hooks.h>
-+#include <linux/uidgid.h>
-+#include <linux/version.h>
-+#include <linux/binfmts.h>
-+#include <linux/err.h>
-+#include <linux/atomic.h>
-+
-+#include "klog.h" // IWYU pragma: keep
-+#include "runtime/ksud_boot.h"
-+#include "compat/kernel_compat.h"
-+#include "setuid_hook.h"
-+#include "manager/throne_tracker.h"
-+
-+#ifndef KSU_KPROBES_HOOK
-+
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||                           \
-+	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
-+struct key *init_session_keyring = NULL;
-+
-+static int ksu_key_permission(key_ref_t key_ref, const struct cred *cred,
-+			      unsigned perm)
-+{
-+	if (init_session_keyring != NULL) {
-+		return 0;
-+	}
-+	if (strcmp(current->comm, "init")) {
-+		// we are only interested in `init` process
-+		return 0;
-+	}
-+	init_session_keyring = cred->session_keyring;
-+	pr_info("kernel_compat: got init_session_keyring\n");
-+	return 0;
-+}
-+#endif
-+
-+void ksu_lsm_hook_exit(void)
-+{
-+}
-+
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-+static int ksu_inode_rename(struct mnt_idmap *idmap, struct inode *old_dir, struct dentry *old_dentry,
-+			    struct inode *new_dir, struct dentry *new_dentry)
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-+static int ksu_inode_rename(struct user_namespace *mnt_userns, struct inode *old_dir, struct dentry *old_dentry,
-+			    struct inode *new_dir, struct dentry *new_dentry)
-+#else
-+static int ksu_inode_rename(struct inode *old_dir, struct dentry *old_dentry,
-+			    struct inode *new_dir, struct dentry *new_dentry)
-+#endif
-+{
-+	// skip kernel threads
-+	if (!current->mm) {
-+		return 0;
-+	}
-+
-+	// skip non system uid
-+	if (current_uid().val != 1000) {
-+		return 0;
-+	}
-+
-+	if (!old_dentry || !new_dentry) {
-+		return 0;
-+	}
-+
-+	// Use d_name.name instead of the dangerous d_iname
-+	// which can cause OOPS when the dentry is in an inconsistent state during rename
-+	if (strcmp(new_dentry->d_name.name, "packages.list")) {
-+		return 0;
-+	}
-+
-+	char path[128];
-+	char *buf = dentry_path_raw(new_dentry, path, sizeof(path));
-+	if (IS_ERR(buf)) {
-+		pr_err("dentry_path_raw failed.\n");
-+		return 0;
-+	}
-+
-+	if (!strstr(buf, "/system/packages.list")) {
-+		return 0;
-+	}
-+
-+	// Do not track anything until the system has fully booted.
-+	// Parsing files during early boot from an LSM hook can causes VFS deadlocks
-+	if (!ksu_boot_completed) {
-+		return 0;
-+	}
-+
-+	pr_debug("renameat: %s -> %s, new path: %s\n", old_dentry->d_name.name,
-+		new_dentry->d_name.name, buf);
-+
-+	// Thread-safe execution using atomic operations to prevent race conditions
-+	// if system_server threads execute this hook concurrently.
-+	static atomic_t first_time = ATOMIC_INIT(1);
-+
-+	// atomic_xchg swaps the value to 0 and returns the old value.
-+	// If the old value was 1, we are the first thread to reach here.
-+	if (atomic_xchg(&first_time, 0) == 1) {
-+		track_throne(true);
-+	} else {
-+		track_throne(false);
-+	}
-+
-+	return 0;
-+}
-+
-+static int ksu_task_fix_setuid(struct cred *new, const struct cred *old,
-+			       int flags)
-+{
-+	kuid_t new_uid = new->uid;
-+
-+	return ksu_handle_setresuid(old->uid.val, new_uid.val);
-+}
-+
-+#ifndef DEVPTS_SUPER_MAGIC
-+#define DEVPTS_SUPER_MAGIC	0x1cd1
-+#endif
-+
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-+int ksu_inode_permission(struct mnt_idmap *idmap, struct inode *inode, int mask)
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-+int ksu_inode_permission(struct user_namespace *mnt_userns, struct inode *inode, int mask)
-+#else
-+int ksu_inode_permission(struct inode *inode, int mask)
-+#endif
-+{
-+	if (unlikely(inode && inode->i_sb && inode->i_sb->s_magic == DEVPTS_SUPER_MAGIC)) {
-+		// __ksu_handle_devpts(inode);
-+	}
-+	return 0;
-+}
-+
-+static struct security_hook_list ksu_hooks[] = {
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0) ||                           \
-+	defined(CONFIG_IS_HW_HISI) || defined(CONFIG_KSU_ALLOWLIST_WORKAROUND)
-+	LSM_HOOK_INIT(key_permission, ksu_key_permission),
-+#endif
-+	LSM_HOOK_INIT(inode_permission, ksu_inode_permission),
-+	LSM_HOOK_INIT(inode_rename, ksu_inode_rename),
-+	LSM_HOOK_INIT(task_fix_setuid, ksu_task_fix_setuid)
-+};
-+
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
-+static const struct lsm_id ksu_lsmid = {
-+	.name = "ksu",
-+	.id = 912,
-+};
-+#endif
-+
-+void __init ksu_lsm_hook_init(void)
-+{
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
-+	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), &ksu_lsmid);
-+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-+	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");
-+#else
-+	// https://elixir.bootlin.com/linux/v4.10.17/source/include/linux/lsm_hooks.h#L1892
-+	security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks));
-+#endif
-+	pr_info("LSM hooks initialized.\n");
-+}
-+#else
-+void __init ksu_lsm_hook_init(void)
-+{
-+	return;
-+}
-+#endif
+ 
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 3cccc780..7b98498d 100644
+index 3cccc780..b2cac86e 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
-@@ -1,68 +1,167 @@
- #include <linux/compiler.h>
-+#include <linux/cred.h>
- #include <linux/version.h>
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-+#include <linux/sched/signal.h>
-+#endif
- #include <linux/slab.h>
- #include <linux/task_work.h>
- #include <linux/thread_info.h>
- #include <linux/seccomp.h>
- #include <linux/printk.h>
- #include <linux/sched.h>
--#include <linux/sched/signal.h>
- #include <linux/string.h>
- #include <linux/types.h>
- #include <linux/uaccess.h>
- #include <linux/uidgid.h>
-
-+#include "policy/app_profile.h"
- #include "policy/allowlist.h"
-+#include "policy/app_profile.h"
- #include "hook/setuid_hook.h"
- #include "klog.h" // IWYU pragma: keep
- #include "manager/manager_identity.h"
- #include "infra/seccomp_cache.h"
+@@ -20,16 +20,79 @@
  #include "supercall/supercall.h"
--#include "hook/tp_marker.h"
-+#include "hook/hook_manager.h"
+ #include "hook/tp_marker.h"
  #include "feature/kernel_umount.h"
 +#include "compat/kernel_compat.h"
-+#include "selinux/selinux.h"
 +
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs.h>
@@ -3462,14 +2174,14 @@ index 3cccc780..7b98498d 100644
 +
 +static bool is_zygote_isolated_service_uid(uid_t uid)
 +{
-+    uid %= 100000;
-+    return uid >= 99000 && uid < 100000;
++	uid %= 100000;
++	return uid >= 99000 && uid < 100000;
 +}
 +
 +static bool is_zygote_normal_app_uid(uid_t uid)
 +{
-+    uid %= 100000;
-+    return uid >= 10000 && uid < 19999;
++	uid %= 100000;
++	return uid >= 10000 && uid < 19999;
 +}
 +
 +extern u32 susfs_zygote_sid;
@@ -3477,134 +2189,95 @@ index 3cccc780..7b98498d 100644
 +extern struct work_struct susfs_extra_works;
 +
 +struct susfs_setuid_task_work {
-+    struct callback_head cb;
++	struct callback_head cb;
 +};
 +
 +static void susfs_setuid_task_work_fn(struct callback_head *cb)
 +{
-+    struct susfs_setuid_task_work *tw =
-+        container_of(cb, struct susfs_setuid_task_work, cb);
-+    const struct cred *saved = override_creds(ksu_cred);
++	struct susfs_setuid_task_work *tw =
++		container_of(cb, struct susfs_setuid_task_work, cb);
++	const struct cred *saved = override_creds(ksu_cred);
 +
-+    revert_creds(saved);
-+    kfree(tw);
++	revert_creds(saved);
++	kfree(tw);
 +}
 +
 +static void ksu_handle_extra_susfs_work(void)
 +{
-+    struct susfs_setuid_task_work *tw;
++	struct susfs_setuid_task_work *tw;
 +
-+    if (work_pending(&susfs_extra_works))
-+        return;
++	if (work_pending(&susfs_extra_works))
++		return;
 +
-+    schedule_work(&susfs_extra_works);
-+    tw = kzalloc(sizeof(*tw), GFP_ATOMIC);
-+    if (!tw)
-+        return;
++	schedule_work(&susfs_extra_works);
++	tw = kzalloc(sizeof(*tw), GFP_ATOMIC);
++	if (!tw)
++		return;
 +
-+    tw->cb.func = susfs_setuid_task_work_fn;
-+    if (task_work_add(current, &tw->cb, TWA_RESUME))
-+        kfree(tw);
++	tw->cb.func = susfs_setuid_task_work_fn;
++	if (task_work_add(current, &tw->cb, TWA_RESUME))
++		kfree(tw);
 +}
 +#endif
-
+ 
  int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
  {
      // we rely on the fact that zygote always call setresuid(3) with same uids
-
+ 
 +#ifdef CONFIG_KSU_SUSFS
-+    if (!susfs_is_sid_equal(current_cred(), susfs_zygote_sid))
-+        return 0;
++	if (!susfs_is_sid_equal(current_cred(), susfs_zygote_sid))
++		return 0;
 +
-+    if (is_zygote_isolated_service_uid(new_uid))
-+        goto do_umount;
++	if (is_zygote_isolated_service_uid(new_uid))
++		goto do_umount;
 +#endif
 +
      pr_info("handle_setresuid from %d to %d\n", old_uid, new_uid);
-
+ 
      if (unlikely(is_uid_manager(new_uid))) {
--        spin_lock_irq(&current->sighand->siglock);
++
++		if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter)
++			ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
+         spin_lock_irq(&current->sighand->siglock);
 -        ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-+
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-+        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
-+            ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
-+        }
-+#else
-+		disable_seccomp();
-+#endif
-+
-+#ifdef KSU_KPROBES_HOOK
          ksu_set_task_tracepoint_flag(current);
--        spin_unlock_irq(&current->sighand->siglock);
-+#endif
-
-         pr_info("install fd for manager: %d\n", new_uid);
-         ksu_install_fd();
+         spin_unlock_irq(&current->sighand->siglock);
+ 
+@@ -38,6 +101,11 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
          return 0;
      }
-
+ 
 +#ifdef CONFIG_KSU_SUSFS
-+    if (is_zygote_normal_app_uid(new_uid) && ksu_uid_should_umount(new_uid))
-+        goto do_umount;
++	if (is_zygote_normal_app_uid(new_uid) && ksu_uid_should_umount(new_uid))
++		goto do_umount;
 +#endif
 +
      if (ksu_is_allow_uid_for_current(new_uid)) {
--        if (current->seccomp.mode == SECCOMP_MODE_FILTER &&
--            current->seccomp.filter) {
--            spin_lock_irq(&current->sighand->siglock);
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-+        if (current->seccomp.mode == SECCOMP_MODE_FILTER && current->seccomp.filter) {
-             ksu_seccomp_allow_cache(current->seccomp.filter, __NR_reboot);
--            spin_unlock_irq(&current->sighand->siglock);
-         }
--        ksu_set_task_tracepoint_flag(current);
--    } else {
--        ksu_clear_task_tracepoint_flag_if_needed(current);
-+#else
-+		disable_seccomp();
-+#endif
-+
-+#ifdef KSU_KPROBES_HOOK
-+		ksu_set_task_tracepoint_flag(current);
-+#endif
-+	} else {
-+#ifdef KSU_KPROBES_HOOK
-+		ksu_clear_task_tracepoint_flag_if_needed(current);
-+#endif
+         if (current->seccomp.mode == SECCOMP_MODE_FILTER &&
+             current->seccomp.filter) {
+@@ -50,8 +118,21 @@ int ksu_handle_setresuid(uid_t old_uid, uid_t new_uid)
+         ksu_clear_task_tracepoint_flag_if_needed(current);
      }
-
-     // Handle kernel umount
+ 
+-    // Handle kernel umount
+-    ksu_handle_umount(old_uid, new_uid);
++	// Handle kernel umount
 +#ifdef CONFIG_KSU_SUSFS
-+    return 0;
++	return 0;
 +
 +do_umount:
 +#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-+    susfs_try_umount(new_uid);
++	susfs_try_umount(new_uid);
 +#else
-+    ksu_handle_umount(old_uid, new_uid);
++	ksu_handle_umount(old_uid, new_uid);
 +#endif
-+    ksu_handle_extra_susfs_work();
-+    susfs_set_current_proc_umounted();
++	ksu_handle_extra_susfs_work();
++	susfs_set_current_proc_umounted();
 +#else
-     ksu_handle_umount(old_uid, new_uid);
++	ksu_handle_umount(old_uid, new_uid);
 +#endif
-
+ 
      return 0;
- }
-
- void __init ksu_setuid_hook_init(void)
- {
--    ksu_kernel_umount_init();
-+	ksu_kernel_umount_init();
- }
-
- void __exit ksu_setuid_hook_exit(void)
- {
--    pr_info("ksu_core_exit\n");
--    ksu_kernel_umount_exit();
-+	pr_info("ksu_core_exit\n");
-+	ksu_kernel_umount_exit();
  }
 diff --git a/kernel/infra/file_wrapper.c b/kernel/infra/file_wrapper.c
 index 3d098d64..022d01e1 100644
@@ -3623,16 +2296,16 @@ index 3d098d64..022d01e1 100644
  #include <linux/version.h>
  #include <linux/mount.h>
 +#include <linux/module.h>
-
+ 
  #include "objsec.h"
-
+ 
 @@ -19,7 +21,7 @@
  #include "klog.h" // IWYU pragma: keep
  #include "selinux/selinux.h"
-
+ 
 -#include "infra/file_wrapper.h"
 +#include "file_wrapper.h"
-
+ 
  struct ksu_file_wrapper {
      struct file *orig;
 @@ -41,6 +43,8 @@ static int ksu_wrapper_open(struct inode *ino, struct file *fp)
@@ -3647,7 +2320,7 @@ index 3d098d64..022d01e1 100644
 @@ -52,423 +56,404 @@ static const struct file_operations ksu_file_wrapper_inode_fops = {
      .open = ksu_wrapper_open
  };
-
+ 
 -static loff_t ksu_wrapper_llseek(struct file *fp, loff_t off, int flags)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3658,7 +2331,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->llseek(data->orig, off, flags);
  }
-
+ 
 -static ssize_t ksu_wrapper_read(struct file *fp, char __user *ptr, size_t sz,
 -                                loff_t *off)
 -{
@@ -3670,7 +2343,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->read(orig, ptr, sz, off);
  }
-
+ 
 -static ssize_t ksu_wrapper_write(struct file *fp, const char __user *ptr,
 -                                 size_t sz, loff_t *off)
 -{
@@ -3682,7 +2355,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->write(orig, ptr, sz, off);
  }
-
+ 
 -static ssize_t ksu_wrapper_read_iter(struct kiocb *iocb, struct iov_iter *iovi)
 -{
 -    struct ksu_file_wrapper *data = iocb->ki_filp->private_data;
@@ -3696,7 +2369,7 @@ index 3d098d64..022d01e1 100644
 +	iocb->ki_filp = orig;
 +	return orig->f_op->read_iter(iocb, iovi);
  }
-
+ 
 -static ssize_t ksu_wrapper_write_iter(struct kiocb *iocb, struct iov_iter *iovi)
 -{
 -    struct ksu_file_wrapper *data = iocb->ki_filp->private_data;
@@ -3710,7 +2383,7 @@ index 3d098d64..022d01e1 100644
 +	return orig->f_op->write_iter(iocb, iovi);
  }
 +#endif
-
+ 
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 -static int ksu_wrapper_iopoll(struct kiocb *kiocb, struct io_comp_batch *icb,
 -                              unsigned int v)
@@ -3741,7 +2414,7 @@ index 3d098d64..022d01e1 100644
 +	return orig->f_op->iopoll(kiocb, spin);
  }
  #endif
-
+ 
  #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 -static int ksu_wrapper_iterate(struct file *fp, struct dir_context *dc)
 -{
@@ -3754,7 +2427,7 @@ index 3d098d64..022d01e1 100644
 +	return orig->f_op->iterate(orig, dc);
  }
  #endif
-
+ 
 -static int ksu_wrapper_iterate_shared(struct file *fp, struct dir_context *dc)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3767,7 +2440,7 @@ index 3d098d64..022d01e1 100644
 +	return orig->f_op->iterate_shared(orig, dc);
  }
 +#endif
-
+ 
 -static __poll_t ksu_wrapper_poll(struct file *fp, struct poll_table_struct *pts)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3780,7 +2453,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->poll(orig, pts);
  }
-
+ 
 -static long ksu_wrapper_unlocked_ioctl(struct file *fp, unsigned int cmd,
 -                                       unsigned long arg)
 -{
@@ -3792,7 +2465,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->unlocked_ioctl(orig, cmd, arg);
  }
-
+ 
 -static long ksu_wrapper_compat_ioctl(struct file *fp, unsigned int cmd,
 -                                     unsigned long arg)
 -{
@@ -3804,7 +2477,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->compat_ioctl(orig, cmd, arg);
  }
-
+ 
 -static int ksu_wrapper_mmap(struct file *fp, struct vm_area_struct *vma)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3815,7 +2488,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->mmap(orig, vma);
  }
-
+ 
 -static int ksu_wrapper_flush(struct file *fp, fl_owner_t id)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3826,7 +2499,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->flush(orig, id);
  }
-
+ 
 -static int ksu_wrapper_fsync(struct file *fp, loff_t off1, loff_t off2,
 -                             int datasync)
 -{
@@ -3839,7 +2512,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->fsync(orig, off1, off2, datasync);
  }
-
+ 
 -static int ksu_wrapper_fasync(int arg, struct file *fp, int arg2)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3850,7 +2523,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->fasync(arg, orig, arg2);
  }
-
+ 
 -static int ksu_wrapper_lock(struct file *fp, int arg1, struct file_lock *fl)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3861,7 +2534,7 @@ index 3d098d64..022d01e1 100644
 +	struct file* orig = data->orig;
 +	return orig->f_op->lock(orig, arg1, fl);
  }
-
+ 
 +
  #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0)
 -static ssize_t ksu_wrapper_sendpage(struct file *fp, struct page *pg, int arg1,
@@ -3882,7 +2555,7 @@ index 3d098d64..022d01e1 100644
 +	return -EINVAL;
  }
  #endif
-
+ 
 -static unsigned long ksu_wrapper_get_unmapped_area(struct file *fp,
 -                                                   unsigned long arg1,
 -                                                   unsigned long arg2,
@@ -3903,9 +2576,9 @@ index 3d098d64..022d01e1 100644
 +	}
 +	return -EINVAL;
  }
-
+ 
  // static int ksu_wrapper_check_flags(int arg) {}
-
+ 
 -static int ksu_wrapper_flock(struct file *fp, int arg1, struct file_lock *fl)
 -{
 -    struct ksu_file_wrapper *data = fp->private_data;
@@ -3922,7 +2595,7 @@ index 3d098d64..022d01e1 100644
 +	}
 +	return -EINVAL;
  }
-
+ 
 -static ssize_t ksu_wrapper_splice_write(struct pipe_inode_info *pii,
 -                                        struct file *fp, loff_t *off, size_t sz,
 -                                        unsigned int arg1)
@@ -3941,7 +2614,7 @@ index 3d098d64..022d01e1 100644
 +	}
 +	return -EINVAL;
  }
-
+ 
 -static ssize_t ksu_wrapper_splice_read(struct file *fp, loff_t *off,
 -                                       struct pipe_inode_info *pii, size_t sz,
 -                                       unsigned int arg1)
@@ -3960,7 +2633,7 @@ index 3d098d64..022d01e1 100644
 +	}
 +	return -EINVAL;
  }
-
+ 
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 -void ksu_wrapper_splice_eof(struct file *fp)
 -{
@@ -3977,7 +2650,7 @@ index 3d098d64..022d01e1 100644
 +	}
  }
  #endif
-
+ 
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
 -static int ksu_wrapper_setlease(struct file *fp, int arg1,
 -                                struct file_lease **fl, void **p)
@@ -4044,7 +2717,7 @@ index 3d098d64..022d01e1 100644
 +	return -EINVAL;
  }
  #endif
-
+ 
 -static long ksu_wrapper_fallocate(struct file *fp, int mode, loff_t offset,
 -                                  loff_t len)
 -{
@@ -4062,7 +2735,7 @@ index 3d098d64..022d01e1 100644
 +	}
 +	return -EINVAL;
  }
-
+ 
 -static void ksu_wrapper_show_fdinfo(struct seq_file *m, struct file *f)
 -{
 -    struct ksu_file_wrapper *data = f->private_data;
@@ -4088,7 +2761,7 @@ index 3d098d64..022d01e1 100644
 +	return -EINVAL;
  }
 +#endif
-
+ 
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)
  // https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/read_write.c;l=1593-1606;drc=398da7defe218d3e51b0f3bdff75147e28125b60
 -static ssize_t ksu_wrapper_copy_file_range(struct file *file_in, loff_t pos_in,
@@ -4107,7 +2780,7 @@ index 3d098d64..022d01e1 100644
 +	return orig->f_op->copy_file_range(file_in, pos_in, orig, pos_out, len, flags);
  }
 +#endif
-
+ 
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
  // no REMAP_FILE_DEDUP: use file_in
  // https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/read_write.c;l=1598-1599;drc=398da7defe218d3e51b0f3bdff75147e28125b60
@@ -4143,7 +2816,7 @@ index 3d098d64..022d01e1 100644
 +	}
  }
 +#endif
-
+ 
 -static int ksu_wrapper_fadvise(struct file *fp, loff_t off1, loff_t off2,
 -                               int flags)
 -{
@@ -4163,9 +2836,9 @@ index 3d098d64..022d01e1 100644
 +	return -EINVAL;
  }
 +#endif
-
+ 
  static void ksu_release_file_wrapper(struct ksu_file_wrapper *data);
-
+ 
 -static int ksu_wrapper_release(struct inode *inode, struct file *filp)
 -{
 -    // https://cs.android.com/android/kernel/superproject/+/common-android-mainline:common/fs/file_table.c;l=467-473;drc=3be0b283b562eabbc2b1f3bb534dc8903079bbaa
@@ -4183,7 +2856,7 @@ index 3d098d64..022d01e1 100644
 +	ksu_release_file_wrapper(filp->private_data);
      return 0;
  }
-
+ 
 -static struct ksu_file_wrapper *ksu_create_file_wrapper(struct file *fp)
 -{
 -    struct ksu_file_wrapper *p =
@@ -4196,10 +2869,10 @@ index 3d098d64..022d01e1 100644
 +	if (!p) {
 +		return ERR_PTR(-ENOMEM);
 +	}
-
+ 
 -    get_file(fp);
 +	get_file(fp);
-
+ 
 -    p->orig = fp;
 -    p->ops.owner = THIS_MODULE;
 -    p->ops.llseek = fp->f_op->llseek ? ksu_wrapper_llseek : NULL;
@@ -4302,11 +2975,11 @@ index 3d098d64..022d01e1 100644
 -    p->ops.splice_eof = fp->f_op->splice_eof ? ksu_wrapper_splice_eof : NULL;
 +	p->ops.splice_eof = fp->f_op->splice_eof ? ksu_wrapper_splice_eof : NULL;
  #endif
-
+ 
 -    return p;
 +	return p;
  }
-
+ 
 -static void ksu_release_file_wrapper(struct ksu_file_wrapper *data)
 -{
 -    fput((struct file *)data->orig);
@@ -4315,7 +2988,7 @@ index 3d098d64..022d01e1 100644
 +	fput((struct file*) data->orig);
 +	kfree(data);
  }
-
+ 
  static char *ksu_wrapper_d_dname(struct dentry *dentry, char *buffer,
 -                                 int buflen)
 +				 int buflen)
@@ -4325,7 +2998,7 @@ index 3d098d64..022d01e1 100644
 +	struct path *orig_path = dentry->d_fsdata;
 +	return d_path(orig_path, buffer, buflen);
  }
-
+ 
  static void ksu_wrapper_d_release(struct dentry *dentry)
  {
 -    struct path *orig_path = dentry->d_fsdata;
@@ -4335,14 +3008,14 @@ index 3d098d64..022d01e1 100644
 +	path_put(orig_path);
 +	kfree(orig_path);
  }
-
+ 
  static const struct dentry_operations ksu_file_wrapper_d_ops = {
 -    .d_dname = ksu_wrapper_d_dname,
 -    .d_release = ksu_wrapper_d_release
 +	.d_dname = ksu_wrapper_d_dname,
 +	.d_release = ksu_wrapper_d_release
  };
-
+ 
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
  #define ksu_anon_inode_create_getfile_compat anon_inode_create_getfile
  #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 16, 0)
@@ -4352,10 +3025,10 @@ index 3d098d64..022d01e1 100644
 +#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 +// There is no anon_inode_create_getfile before 4.19, but it's not difficult to implement it.
  // https://cs.android.com/android/kernel/superproject/+/common-android12-5.10:common/fs/anon_inodes.c;l=58-125;drc=0d34ce8aa78e38affbb501690bcabec4df88620e
-
+ 
  // Borrow kernel's anon_inode_mnt, so that we don't need to mount one by ourselves.
 @@ -476,164 +461,184 @@ static struct vfsmount *anon_inode_mnt __read_mostly;
-
+ 
  static struct inode *
  ksu_anon_inode_make_secure_inode(const char *name,
 -                                 const struct inode *context_inode)
@@ -4373,7 +3046,7 @@ index 3d098d64..022d01e1 100644
 +	int error;
 +	const struct qstr qname = QSTR_INIT(name, strlen(name));
 +#endif
-
+ 
 -    inode = alloc_anon_inode(anon_inode_mnt->mnt_sb);
 -    if (IS_ERR(inode))
 -        return inode;
@@ -4401,7 +3074,7 @@ index 3d098d64..022d01e1 100644
 +#endif
 +	return inode;
  }
-
+ 
  static struct file *ksu_anon_inode_create_getfile_compat(
 -    const char *name, const struct file_operations *fops, void *priv, int flags,
 -    const struct inode *context_inode)
@@ -4412,12 +3085,12 @@ index 3d098d64..022d01e1 100644
 -    struct file *file;
 +	struct inode *inode;
 +	struct file *file;
-
+ 
 -    if (fops->owner && !try_module_get(fops->owner))
 -        return ERR_PTR(-ENOENT);
 +	if (fops->owner && !try_module_get(fops->owner))
 +		return ERR_PTR(-ENOENT);
-
+ 
 -    inode = ksu_anon_inode_make_secure_inode(name, context_inode);
 -    if (IS_ERR(inode)) {
 -        file = ERR_CAST(inode);
@@ -4428,7 +3101,7 @@ index 3d098d64..022d01e1 100644
 +		file = ERR_CAST(inode);
 +		goto err;
 +	}
-
+ 
 -    file = alloc_file_pseudo(inode, anon_inode_mnt, name,
 -                             flags & (O_ACCMODE | O_NONBLOCK), fops);
 -    if (IS_ERR(file))
@@ -4437,16 +3110,16 @@ index 3d098d64..022d01e1 100644
 +				 flags & (O_ACCMODE | O_NONBLOCK), fops);
 +	if (IS_ERR(file))
 +		goto err_iput;
-
+ 
 -    file->f_mapping = inode->i_mapping;
 +	file->f_mapping = inode->i_mapping;
-
+ 
 -    file->private_data = priv;
 +	file->private_data = priv;
-
+ 
 -    return file;
 +	return file;
-
+ 
  err_iput:
 -    iput(inode);
 +	iput(inode);
@@ -4464,7 +3137,7 @@ index 3d098d64..022d01e1 100644
 +	return anon_inode_getfile(name, fops, priv, flags);
  }
  #endif
-
+ 
  int ksu_install_file_wrapper(int fd)
  {
 -    int out_fd, ret;
@@ -4586,7 +3259,7 @@ index 3d098d64..022d01e1 100644
 +#else
 +	wrapper_sec = selinux_inode(wrapper_inode);
 +#endif
-
+ 
 -    fd_install(out_fd, wrapper_file);
 -    ret = out_fd;
 -    goto done;
@@ -4613,7 +3286,7 @@ index 3d098d64..022d01e1 100644
 +	fd_install(out_fd, wrapper_file);
 +	ret = out_fd;
 +	goto done;
-
+ 
  out_put_wrapper_file:
 -    fput(wrapper_file);
 -    // file_wrapper will be released by fput
@@ -4630,11 +3303,11 @@ index 3d098d64..022d01e1 100644
  done:
 -    fput(orig_file);
 +	fput(orig_file);
-
+ 
 -    return ret;
 +	return ret;
  }
-
+ 
  void __init ksu_file_wrapper_init(void)
  {
 -#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0)
@@ -4678,7 +3351,7 @@ index 6511066b..7fc9724c 100644
 +#include <asm/unistd.h>
  #include "klog.h" // IWYU pragma: keep
  #include "infra/seccomp_cache.h"
-
+ 
 +#ifndef SECCOMP_ARCH_NATIVE_NR
 +#define SECCOMP_ARCH_NATIVE_NR __NR_syscalls
 +#endif
@@ -4702,7 +3375,7 @@ index 270381d9..7838a0d1 100644
 -#define __KSU_H_KERNEL_COMPAT
 +#ifndef __KSU_H_SECCOMP_CACHE
 +#define __KSU_H_SECCOMP_CACHE
-
+ 
  #include <linux/fs.h>
  #include <linux/version.h>
 diff --git a/kernel/infra/su_mount_ns.c b/kernel/infra/su_mount_ns.c
@@ -4715,7 +3388,7 @@ index 3d0631a9..769a757f 100644
  #include <linux/version.h>
 -#include <uapi/linux/mount.h>
 +#include <linux/mount.h>
-
+ 
  #include "arch.h"
  #include "klog.h" // IWYU pragma: keep
 diff --git a/kernel/manager/pkg_observer.c b/kernel/manager/pkg_observer.c
@@ -4729,11 +3402,11 @@ index 670918fa..893c0f47 100644
 +#include "compat/kernel_compat.h"
  #include "klog.h" // IWYU pragma: keep
  #include "manager/throne_tracker.h"
-
+ 
 @@ -69,8 +70,34 @@ static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,
      return 0;
  }
-
+ 
 +#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
 +static int ksu_handle_event(struct fsnotify_group *group, struct inode *inode,
 +                            u32 mask, const void *data, int data_type,
@@ -4763,7 +3436,7 @@ index 670918fa..893c0f47 100644
  	.handle_inode_event = ksu_handle_inode_event,
 +#endif
  };
-
+ 
  static int add_mark_on_inode(struct inode *inode, u32 mask,
 diff --git a/kernel/policy/allowlist.c b/kernel/policy/allowlist.c
 index fbb32376..2a15f16e 100644
@@ -4780,7 +3453,7 @@ index fbb32376..2a15f16e 100644
 @@ -16,8 +17,13 @@
  #include <linux/hashtable.h>
  #include <linux/kref.h>
-
+ 
 +#ifndef fallthrough
 +#define fallthrough do { } while (0)
 +#endif
@@ -4798,14 +3471,14 @@ index 6336a222..8991b2fc 100644
 @@ -77,15 +77,18 @@ void seccomp_filter_release(struct task_struct *tsk);
  static bool has_call_to_spin_lock = false;
  #endif
-
+ 
 -static void disable_seccomp(void)
 +void disable_seccomp(void)
  {
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || \
 +     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
      struct task_struct *fake;
-
+ 
 -    fake = kmalloc(sizeof(*fake), GFP_KERNEL);
 +    fake = kmalloc(sizeof(*fake), GFP_ATOMIC);
      if (!fake) {
@@ -4813,13 +3486,13 @@ index 6336a222..8991b2fc 100644
          return;
      }
 +#endif
-
+ 
      // Refer to kernel/seccomp.c: seccomp_set_mode_strict
      // When disabling Seccomp, ensure that current->sighand->siglock is held during the operation.
 @@ -98,13 +101,21 @@ static void disable_seccomp(void)
      clear_thread_flag(TIF_SECCOMP);
  #endif
-
+ 
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || \
 +     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
      memcpy(fake, current, sizeof(*fake));
@@ -4834,19 +3507,19 @@ index 6336a222..8991b2fc 100644
      current->seccomp.filter = NULL;
 -    atomic_set(&current->seccomp.filter_count, 0);
      spin_unlock_irq(&current->sighand->siglock);
-
+ 
 +#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || \
 +     defined(KSU_OPTIONAL_SECCOMP_FILTER_RELEASE))
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
      // https://github.com/torvalds/linux/commit/bfafe5efa9754ebc991750da0bcca2a6694f3ed3#diff-45eb79a57536d8eccfc1436932f093eb5c0b60d9361c39edb46581ad313e8987R576-R577
      fake->flags |= PF_EXITING;
 @@ -121,6 +132,7 @@ static void disable_seccomp(void)
-
+ 
      seccomp_filter_release(fake);
      kfree(fake);
 +#endif
  }
-
+ 
  int escape_with_root_profile(void)
 diff --git a/kernel/policy/app_profile.h b/kernel/policy/app_profile.h
 index 0e223df7..f5b0b4d1 100644
@@ -4855,12 +3528,12 @@ index 0e223df7..f5b0b4d1 100644
 @@ -9,6 +9,9 @@
  // Escalate current process to root with the appropriate profile
  int escape_with_root_profile(void);
-
+ 
 +// Drop the current task's seccomp filter on kernels before 5.10.
 +void disable_seccomp(void);
 +
  void escape_to_root_for_init(void);
-
+ 
  void __init ksu_app_profile_init(void);
 diff --git a/kernel/runtime/boot_event.c b/kernel/runtime/boot_event.c
 index 6e3c4de4..1485f221 100644
@@ -4871,11 +3544,11 @@ index 6e3c4de4..1485f221 100644
  #include <linux/namei.h>
  #include <linux/printk.h>
 +#include <linux/workqueue.h>
-
+ 
  #include "policy/allowlist.h"
  #include "policy/feature.h"
 @@ -14,6 +15,38 @@
-
+ 
  bool ksu_module_mounted __read_mostly = false;
  bool ksu_boot_completed __read_mostly = false;
 +bool ksu_ksud_present __read_mostly = false;
@@ -4910,89 +3583,43 @@ index 6e3c4de4..1485f221 100644
 +{
 +	schedule_work(&ksu_check_ksud_work);
 +}
-
+ 
  extern void ksu_avc_spoof_late_init(void);
-
+ 
 @@ -31,6 +64,7 @@ void on_post_fs_data(void)
-
+ 
      ksu_load_allow_list();
      ksu_observer_init();
 +	ksu_check_ksud();
      // Sanity check for safe mode only needs early-boot input samples.
      ksu_stop_input_hook_runtime();
      ksu_selinux_hide_handle_post_fs_data();
-diff --git a/kernel/runtime/ksud.h b/kernel/runtime/ksud.h
-index 09384def..94dffecf 100644
---- a/kernel/runtime/ksud.h
-+++ b/kernel/runtime/ksud.h
-@@ -2,9 +2,22 @@
- #define __KSU_H_KSUD
-
- #include <asm/syscall.h>
-+#include <linux/compat.h>
-
- #define KSUD_PATH "/data/adb/ksud"
-
-+struct user_arg_ptr {
-+#ifdef CONFIG_COMPAT
-+    bool is_compat;
-+#endif
-+    union {
-+        const char __user *const __user *native;
-+#ifdef CONFIG_COMPAT
-+        const compat_uptr_t __user *compat;
-+#endif
-+    } ptr;
-+};
-+
- void ksu_ksud_init();
- void ksu_ksud_exit();
-
 diff --git a/kernel/runtime/ksud_boot.h b/kernel/runtime/ksud_boot.h
 index c12c520a..16184a77 100644
 --- a/kernel/runtime/ksud_boot.h
 +++ b/kernel/runtime/ksud_boot.h
 @@ -13,5 +13,7 @@ int nuke_ext4_sysfs(const char *mnt);
-
+ 
  extern bool ksu_module_mounted;
  extern bool ksu_boot_completed;
 +extern bool ksu_ksud_present;
 +void ksu_recheck_ksud(void);
-
+ 
  #endif // __KSU_H_KSUD_BOOT
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index e8c69947..1169333a 100644
+index e8c69947..d90202f4 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
-@@ -56,18 +56,6 @@ static void stop_execve_hook();
- static struct work_struct stop_input_hook_work;
-
- #define MAX_ARG_STRINGS 0x7FFFFFFF
--struct user_arg_ptr {
--#ifdef CONFIG_COMPAT
--    bool is_compat;
--#endif
--    union {
--        const char __user *const __user *native;
--#ifdef CONFIG_COMPAT
--        const compat_uptr_t __user *compat;
--#endif
--    } ptr;
--};
--
- static const char __user *get_user_arg_ptr(struct user_arg_ptr argv, int nr)
- {
-     const char __user *native;
-@@ -136,7 +124,7 @@ static bool check_argv(struct user_arg_ptr argv, int index, const char *expected
+@@ -136,7 +136,7 @@ static bool check_argv(struct user_arg_ptr argv, int index, const char *expected
      if (!p || IS_ERR(p))
          goto fail;
-
+ 
 -    if (strncpy_from_user_nofault(buf, p, buf_len) <= 0)
 +    if (strncpy_from_user(buf, p, buf_len) <= 0)
          goto fail;
-
+ 
      buf[buf_len - 1] = '\0';
-@@ -597,10 +585,10 @@ static long ksu_sys_fstat(const struct pt_regs *regs)
+@@ -597,10 +597,10 @@ static long ksu_sys_fstat(const struct pt_regs *regs)
          void __user *st_size_ptr = statbuf + offsetof(struct stat, st_size);
          long size, new_size;
          size_t extra = ksu_rc_len + module_rc_len;
@@ -5016,7 +3643,7 @@ index 5b5c170c..d8d2c9a9 100644
 +#include <linux/sched/types.h>
 +#include <linux/stop_machine.h>
 +#include <uapi/linux/sched/types.h>
-
+ 
 -#include "uapi/selinux.h"
  #include "klog.h" // IWYU pragma: keep
  #include "selinux.h"
@@ -5024,15 +3651,15 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -15,13 +17,33 @@
  #include "linux/lsm_audit.h" // IWYU pragma: keep
  #include "xfrm.h"
-
+ 
 -struct selinux_policy *backup_sepolicy;
 -
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
  #define SELINUX_POLICY_INSTEAD_SELINUX_SS
 +#endif
-
+ 
  #define ALL NULL
-
+ 
 -#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
 +static DEFINE_MUTEX(ksu_rules);
 +
@@ -5071,7 +3698,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -42,8 +65,72 @@ static void reset_avc_cache()
      selinux_xfrm_notify_policyload();
  }
-
+ 
 +#ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
 +static int apply_kernelsu_rules_fn(void *ptr)
 +{
@@ -5140,11 +3767,11 @@ index 5b5c170c..d8d2c9a9 100644
 +#ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
      struct selinux_policy *pol, *old_pol;
      struct policydb *db;
-
+ 
 @@ -112,8 +199,33 @@ void apply_kernelsu_rules()
          ksu_allowxperm(db, KERNEL_SU_DOMAIN, ALL, "file", ALL);
      }
-
+ 
 +    // we need to save allowlist in /data/adb/ksu
 +    ksu_allow(db, "kernel", "adb_data_file", "dir", ALL);
 +    ksu_allow(db, "kernel", "adb_data_file", "file", ALL);
@@ -5172,7 +3799,7 @@ index 5b5c170c..d8d2c9a9 100644
      ksu_allow(db, "init", KERNEL_SU_DOMAIN, ALL, ALL);
 +    // we need to umount modules in zygote
 +    ksu_allow(db, "zygote", "adb_data_file", "dir", "search");
-
+ 
      // copied from Magisk rules
      // suRights
 @@ -122,7 +234,7 @@ void apply_kernelsu_rules()
@@ -5181,13 +3808,13 @@ index 5b5c170c..d8d2c9a9 100644
      ksu_allow(db, "servicemanager", KERNEL_SU_DOMAIN, "process", "getattr");
 -    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "process", "sigchld");
 +    ksu_allow(db, ALL, KERNEL_SU_DOMAIN, "process", "sigchld");
-
+ 
      // allowLog
      ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "dir", "search");
 @@ -130,24 +242,12 @@ void apply_kernelsu_rules()
      ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "open");
      ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "getattr");
-
+ 
 -    // dumpsys, send fd
 -    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fd", "use");
 -    ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fifo_file", "write");
@@ -5212,12 +3839,12 @@ index 5b5c170c..d8d2c9a9 100644
 +    ksu_allow(db, ALL, KERNEL_SU_DOMAIN, "fifo_file", "read");
 +    ksu_allow(db, ALL, KERNEL_SU_DOMAIN, "fifo_file", "open");
 +    ksu_allow(db, ALL, KERNEL_SU_DOMAIN, "fifo_file", "getattr");
-
+ 
      // bootctl
      ksu_allow(db, "hwservicemanager", KERNEL_SU_DOMAIN, "dir", "search");
 @@ -169,13 +269,45 @@ void apply_kernelsu_rules()
      ksu_destroy_sepolicy(old_pol);
-
+ 
      reset_avc_cache();
 +#ifdef CONFIG_KSU_SUSFS
 +    susfs_set_priv_app_sid();
@@ -5233,10 +3860,10 @@ index 5b5c170c..d8d2c9a9 100644
 +    reset_avc_cache();
 +#endif
  }
-
+ 
  #define KSU_SEPOLICY_MAX_BATCH_SIZE (8U * 1024U * 1024U)
  #define KSU_SEPOLICY_MAX_ARGS 5
-
+ 
 +#define CMD_NORMAL_PERM 1
 +#define CMD_XPERM 2
 +#define CMD_TYPE_STATE 3
@@ -5295,7 +3922,7 @@ index 5b5c170c..d8d2c9a9 100644
          return -EINVAL;
 @@ -279,21 +411,21 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
      int ret;
-
+ 
      switch (header->cmd) {
 -    case KSU_SEPOLICY_CMD_NORMAL_PERM:
 -        if (header->subcmd == KSU_SEPOLICY_SUBCMD_NORMAL_PERM_ALLOW) {
@@ -5315,7 +3942,7 @@ index 5b5c170c..d8d2c9a9 100644
              pr_err("sepol: unknown subcmd: %d\n", header->subcmd);
          }
          return success ? 0 : -EINVAL;
-
+ 
 -    case KSU_SEPOLICY_CMD_XPERM:
 +    case CMD_XPERM:
          ret = sepol_require_not_all(args[3], "operation");
@@ -5324,7 +3951,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -303,12 +435,12 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
              return ret;
          }
-
+ 
 -        if (header->subcmd == KSU_SEPOLICY_SUBCMD_XPERM_ALLOW) {
 +        if (header->subcmd == SUBCMD_XPERM_ALLOW) {
              success = ksu_allowxperm(db, args[0], args[1], args[2], args[4]);
@@ -5340,14 +3967,14 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -316,23 +448,23 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
          }
          return success ? 0 : -EINVAL;
-
+ 
 -    case KSU_SEPOLICY_CMD_TYPE_STATE:
 +    case CMD_TYPE_STATE:
          ret = sepol_require_not_all(args[0], "type");
          if (ret < 0) {
              return ret;
          }
-
+ 
 -        if (header->subcmd == KSU_SEPOLICY_SUBCMD_TYPE_STATE_PERMISSIVE) {
 +        if (header->subcmd == SUBCMD_TYPE_STATE_PERMISSIVE) {
              success = ksu_permissive(db, args[0]);
@@ -5358,7 +3985,7 @@ index 5b5c170c..d8d2c9a9 100644
              pr_err("sepol: unknown subcmd: %d\n", header->subcmd);
          }
          return success ? 0 : -EINVAL;
-
+ 
 -    case KSU_SEPOLICY_CMD_TYPE:
 -    case KSU_SEPOLICY_CMD_TYPE_ATTR:
 +    case CMD_TYPE:
@@ -5369,7 +3996,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -342,7 +474,7 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
              return ret;
          }
-
+ 
 -        if (header->cmd == KSU_SEPOLICY_CMD_TYPE) {
 +        if (header->cmd == CMD_TYPE) {
              success = ksu_type(db, args[0], args[1]);
@@ -5378,7 +4005,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -353,7 +485,7 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
          }
          return 0;
-
+ 
 -    case KSU_SEPOLICY_CMD_ATTR:
 +    case CMD_ATTR:
          ret = sepol_require_not_all(args[0], "attribute");
@@ -5387,16 +4014,16 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -365,7 +497,7 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
          }
          return 0;
-
+ 
 -    case KSU_SEPOLICY_CMD_TYPE_TRANSITION: {
 +    case CMD_TYPE_TRANSITION: {
          const char *object = ALL;
-
+ 
          ret = sepol_require_not_all(args[0], "src");
 @@ -392,7 +524,7 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
          return success ? 0 : -EINVAL;
      }
-
+ 
 -    case KSU_SEPOLICY_CMD_TYPE_CHANGE:
 +    case CMD_TYPE_CHANGE:
          ret = sepol_require_not_all(args[0], "src");
@@ -5405,7 +4032,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -410,16 +542,16 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
              return ret;
          }
-
+ 
 -        if (header->subcmd == KSU_SEPOLICY_SUBCMD_TYPE_CHANGE_CHANGE) {
 +        if (header->subcmd == SUBCMD_TYPE_CHANGE_CHANGE) {
              success = ksu_type_change(db, args[0], args[1], args[2], args[3]);
@@ -5416,7 +4043,7 @@ index 5b5c170c..d8d2c9a9 100644
              pr_err("sepol: unknown subcmd: %d\n", header->subcmd);
          }
          return success ? 0 : -EINVAL;
-
+ 
 -    case KSU_SEPOLICY_CMD_GENFSCON:
 +    case CMD_GENFSCON:
          ret = sepol_require_not_all(args[0], "name");
@@ -5425,7 +4052,7 @@ index 5b5c170c..d8d2c9a9 100644
 @@ -445,8 +577,59 @@ static int apply_one_sepolicy_cmd(struct policydb *db,
      }
  }
-
+ 
 +#ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
 +struct ksu_sepol_apply_context {
 +    const u8 *payload;
@@ -5484,7 +4111,7 @@ index 5b5c170c..d8d2c9a9 100644
      struct sepol_batch_cursor cursor;
 @@ -556,4 +739,34 @@ out_free:
      kvfree(payload);
-
+ 
      return ret;
 +#else
 +    struct ksu_sepol_apply_context ctx;
@@ -5533,13 +4160,13 @@ index 1a76dbd7..6b2b23be 100644
 +#define selinux_cred ksu_selinux_cred
 +#endif
 +
-
+ 
  #ifdef CONFIG_ANDROID
  #define ksu_security_secid_to_secctx security_secid_to_secctx
 @@ -291,6 +299,32 @@ bool is_init(const struct cred *cred)
      return is_sid_match(cred, cached_init_sid, INIT_CONTEXT);
  }
-
+ 
 +#ifdef CONFIG_KSU_SUSFS
 +#define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
 +u32 susfs_ksu_sid __read_mostly;
@@ -5574,9 +4201,9 @@ index 158f9455..4792303e 100644
 --- a/kernel/selinux/selinux.h
 +++ b/kernel/selinux/selinux.h
 @@ -42,4 +42,13 @@ void escape_to_root_for_adb_root();
-
+ 
  extern u32 ksu_file_sid;
-
+ 
 +#ifdef CONFIG_KSU_SUSFS
 +bool susfs_is_sid_equal(const struct cred *cred, u32 sid);
 +void susfs_set_zygote_sid(void);
@@ -5594,34 +4221,34 @@ index 1e8ebb39..a2c086ea 100644
 @@ -25,14 +25,11 @@ static struct avtab_node *get_avtab_node(struct policydb *db,
                                           struct avtab_key *key,
                                           struct avtab_extended_perms *xperms);
-
+ 
 -static bool is_redundant_avtab_node(struct avtab_node *node);
 -
 -static bool remove_avtab_node(struct policydb *db, struct avtab_node *node);
 -
  static bool add_rule(struct policydb *db, const char *s, const char *t,
                       const char *c, const char *p, int effect, bool invert);
-
+ 
 -static bool add_rule_raw(struct policydb *db, struct type_datum *src, struct type_datum *tgt, struct class_datum *cls,
 +static void add_rule_raw(struct policydb *db, struct type_datum *src,
 +                         struct type_datum *tgt, struct class_datum *cls,
                           struct perm_datum *perm, int effect, bool invert);
-
+ 
  static void add_xperm_rule_raw(struct policydb *db, struct type_datum *src,
 @@ -94,7 +91,8 @@ static bool add_typeattribute(struct policydb *db, const char *type,
  #define symtab_insert(s, name, datum) hashtab_insert((s)->table, name, datum)
  #endif
-
+ 
 -#define avtab_for_each(avtab, cur) ksu_hash_for_each(avtab.htable, avtab.nslot, cur)
 +#define avtab_for_each(avtab, cur)                                             \
 +    ksu_hash_for_each(avtab.htable, avtab.nslot, cur);
-
+ 
  static struct avtab_node *get_avtab_node(struct policydb *db,
                                           struct avtab_key *key,
 @@ -149,67 +147,6 @@ static struct avtab_node *get_avtab_node(struct policydb *db,
      return node;
  }
-
+ 
 -static bool is_redundant_avtab_node(struct avtab_node *node)
 -{
 -    if (node->key.specified & AVTAB_XPERMS)
@@ -5694,7 +4321,7 @@ index 1e8ebb39..a2c086ea 100644
 +    add_rule_raw(db, src, tgt, cls, perm, effect, invert);
 +    return true;
  }
-
+ 
 -static bool add_rule_raw(struct policydb *db, struct type_datum *src, struct type_datum *tgt, struct class_datum *cls,
 +static void add_rule_raw(struct policydb *db, struct type_datum *src,
 +                         struct type_datum *tgt, struct class_datum *cls,
@@ -5755,7 +4382,7 @@ index 1e8ebb39..a2c086ea 100644
          key.target_type = tgt->value;
          key.target_class = cls->value;
          key.specified = effect;
-
+ 
 -        if (invert && effect != AVTAB_AUDITDENY) {
 -            node = avtab_search_node(&db->te_avtab, &key);
 -            if (!node)
@@ -5780,16 +4407,16 @@ index 1e8ebb39..a2c086ea 100644
 -
 -    return success;
  }
-
+ 
  #define ioctl_driver(x) (x >> 8 & 0xFF)
 @@ -511,8 +436,6 @@ static bool add_type_rule(struct policydb *db, const char *s, const char *t,
      key.specified = effect;
-
+ 
      struct avtab_node *node = get_avtab_node(db, &key, NULL);
 -    if (!node)
 -        return false;
      node->datum.u.data = def->value;
-
+ 
      return true;
 @@ -566,8 +489,6 @@ static bool add_filename_trans(struct policydb *db, const char *s,
  {
@@ -5797,13 +4424,13 @@ index 1e8ebb39..a2c086ea 100644
      struct class_datum *cls;
 -    struct filename_trans_key *new_key = NULL;
 -    int rc;
-
+ 
      src = symtab_search(&db->p_types, s);
      if (src == NULL) {
 @@ -590,64 +511,76 @@ static bool add_filename_trans(struct policydb *db, const char *s,
          return false;
      }
-
+ 
 -    struct filename_trans_key key;
 -    key.ttype = tgt->value;
 -    key.tclass = cls->value;
@@ -5813,10 +4440,10 @@ index 1e8ebb39..a2c086ea 100644
 +	key.ttype = tgt->value;
 +	key.tclass = cls->value;
 +	key.name = (char *)o;
-
+ 
 -    struct filename_trans_datum *last = NULL;
 +	struct filename_trans_datum *last = NULL;
-
+ 
 -    struct filename_trans_datum *trans = policydb_filenametr_search(db, &key);
 -    while (trans) {
 -        if (ebitmap_get_bit(&trans->stypes, src->value - 1)) {
@@ -5845,7 +4472,7 @@ index 1e8ebb39..a2c086ea 100644
 +		last = trans;
 +		trans = trans->next;
 +	}
-
+ 
      if (trans == NULL) {
          trans = (struct filename_trans_datum *)kcalloc(1, sizeof(*trans),
                                                         GFP_KERNEL);
@@ -5927,7 +4554,7 @@ index 1e8ebb39..a2c086ea 100644
 +	return ebitmap_set_bit(&db->filename_trans_ttypes, src->value - 1, 1) == 0;
 +#endif
  }
-
+ 
  static bool add_genfscon(struct policydb *db, const char *fs_name,
 @@ -659,29 +592,9 @@ static bool add_genfscon(struct policydb *db, const char *fs_name,
  // https://github.com/torvalds/linux/commit/590b9d576caec6b4c46bba49ed36223a399c3fc5#diff-cc9aa90e094e6e0f47bd7300db4f33cf4366b98b55d8753744f31eb69c691016R844-R845
@@ -5958,33 +4585,33 @@ index 1e8ebb39..a2c086ea 100644
 -    ksu_kvrealloc_compat(p, old_size, new_size, GFP_KERNEL)
 +	ksu_compat_kvrealloc(p, old_size, new_size, GFP_KERNEL)
  #endif
-
+ 
  static bool add_type(struct policydb *db, const char *type_name, bool attr)
 @@ -714,9 +627,10 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
          return false;
      }
-
+ 
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
      struct ebitmap *new_type_attr_map_array =
          ksu_kvrealloc(db->type_attr_map_array, value * sizeof(struct ebitmap),
 -                      (value - 1) * sizeof(struct ebitmap));
 +                    (value - 1) * sizeof(struct ebitmap));
-
+ 
      if (!new_type_attr_map_array) {
          pr_err("add_type: alloc type_attr_map_array failed\n");
 @@ -725,8 +639,8 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
-
+ 
      struct type_datum **new_type_val_to_struct =
          ksu_kvrealloc(db->type_val_to_struct,
 -                      sizeof(*db->type_val_to_struct) * value,
 -                      sizeof(*db->type_val_to_struct) * (value - 1));
 +                    sizeof(*db->type_val_to_struct) * value,
 +                    sizeof(*db->type_val_to_struct) * (value - 1));
-
+ 
      if (!new_type_val_to_struct) {
          pr_err("add_type: alloc type_val_to_struct failed\n");
 @@ -735,7 +649,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
-
+ 
      char **new_val_to_name_types =
          ksu_kvrealloc(db->sym_val_to_name[SYM_TYPES], sizeof(char *) * value,
 -                      sizeof(char *) * (value - 1));
@@ -5993,14 +4620,14 @@ index 1e8ebb39..a2c086ea 100644
          pr_err("add_type: alloc val_to_name failed\n");
          return false;
 @@ -753,10 +667,171 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
-
+ 
      int i;
      for (i = 0; i < db->p_roles.nprim; ++i) {
 -        ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
 +        ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1,
 +                1);
      }
-
+ 
      return true;
 +#elif defined(CONFIG_IS_HW_HISI)
 +	/*
@@ -6163,7 +4790,7 @@ index 1e8ebb39..a2c086ea 100644
 +	return true;
 +#endif
  }
-
+ 
  static bool set_type_state(struct policydb *db, const char *type_name,
 @@ -788,7 +863,18 @@ static bool set_type_state(struct policydb *db, const char *type_name,
  static void add_typeattribute_raw(struct policydb *db, struct type_datum *type,
@@ -6182,12 +4809,12 @@ index 1e8ebb39..a2c086ea 100644
 +		flex_array_get(db->type_attr_map_array, type->value - 1);
 +#endif
      ebitmap_set_bit(sattr, attr->value - 1, 1);
-
+ 
      struct hashtab_node *node;
 @@ -944,6 +1030,8 @@ bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path,
-
+ 
  // ======== sepolicy ========
-
+ 
 +#ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
 +
  void ksu_destroy_sepolicy(struct selinux_policy *pol)
@@ -6196,7 +4823,7 @@ index 1e8ebb39..a2c086ea 100644
 @@ -1032,6 +1120,8 @@ out_free_data:
      return ERR_PTR(ret);
  }
-
+ 
 +#endif
 +
  #define KSU_SEPOL_SYNC_MAX_BUF   SZ_64M
@@ -6207,20 +4834,20 @@ index 50541ee5..7d6ed4e3 100644
 --- a/kernel/selinux/sepolicy.h
 +++ b/kernel/selinux/sepolicy.h
 @@ -5,12 +5,8 @@
-
+ 
  #include "ss/policydb.h"
-
+ 
 -struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
 -
  int ksu_policydb_fixup_len(struct policydb *db, const char *tag);
-
+ 
 -void ksu_destroy_sepolicy(struct selinux_policy *orig);
 -
  // Operation on types
  bool ksu_type(struct policydb *db, const char *name, const char *attr);
  bool ksu_attribute(struct policydb *db, const char *name);
 @@ -21,32 +17,32 @@ bool ksu_exists(struct policydb *db, const char *type);
-
+ 
  // Access vector rules
  bool ksu_allow(struct policydb *db, const char *src, const char *tgt,
 -               const char *cls, const char *perm);
@@ -6234,7 +4861,7 @@ index 50541ee5..7d6ed4e3 100644
  bool ksu_dontaudit(struct policydb *db, const char *src, const char *tgt,
 -                   const char *cls, const char *perm);
 +           const char *cls, const char *perm);
-
+ 
  // Extended permissions access vector rules
  bool ksu_allowxperm(struct policydb *db, const char *src, const char *tgt,
 -                    const char *cls, const char *range);
@@ -6245,7 +4872,7 @@ index 50541ee5..7d6ed4e3 100644
  bool ksu_dontauditxperm(struct policydb *db, const char *src, const char *tgt,
 -                        const char *cls, const char *range);
 +            const char *cls, const char *range);
-
+ 
  // Type rules
  bool ksu_type_transition(struct policydb *db, const char *src, const char *tgt,
 -                         const char *cls, const char *def, const char *obj);
@@ -6256,20 +4883,20 @@ index 50541ee5..7d6ed4e3 100644
  bool ksu_type_member(struct policydb *db, const char *src, const char *tgt,
 -                     const char *cls, const char *def);
 +             const char *cls, const char *def);
-
+ 
  // File system labeling
  bool ksu_genfscon(struct policydb *db, const char *fs_name, const char *path,
 -                  const char *ctx);
 +          const char *ctx);
-
+ 
 -#endif
 \ No newline at end of file
 +#endif
 diff --git a/kernel/sulog/event.c b/kernel/sulog/event.c
-index 17375e1c..727de0ca 100644
+index 17375e1c..7317898c 100644
 --- a/kernel/sulog/event.c
 +++ b/kernel/sulog/event.c
-@@ -2,40 +2,53 @@
+@@ -2,40 +2,65 @@
  #include <linux/compat.h>
  #include <linux/cred.h>
  #include <linux/gfp.h>
@@ -6284,26 +4911,38 @@ index 17375e1c..727de0ca 100644
  #include <linux/slab.h>
  #include <linux/string.h>
  #include <linux/uaccess.h>
-
+ 
 -#include <linux/version.h>
 +// untagged_addr is a macro in mm.h on x86 before 6.2
  #if defined(__x86_64__) && LINUX_VERSION_CODE < KERNEL_VERSION(6, 2, 0)
  #include <linux/mm.h>
  #endif
-
+ 
 +#include "compat/kernel_compat.h"
++
++struct user_arg_ptr {
++#ifdef CONFIG_COMPAT
++	bool is_compat;
++#endif
++	union {
++		const char __user *const __user *native;
++#ifdef CONFIG_COMPAT
++		const compat_uptr_t __user *compat;
++#endif
++	} ptr;
++};
  #include "feature/sulog.h"
  #include "infra/event_queue.h"
  #include "klog.h" // IWYU pragma: keep
 +#include "runtime/ksud.h" // struct user_arg_ptr
  #include "sulog/event.h"
-
+ 
  #define KSU_SULOG_MAX_QUEUED 256U
  #define KSU_SULOG_MAX_PAYLOAD_LEN 2048U
  #define KSU_SULOG_MAX_ARG_STRINGS 0x7FFFFFFF
  #define KSU_SULOG_MAX_ARG_CHUNK 256U
 -#define KSU_SULOG_MAX_FILENAME_LEN 256U
-
+ 
 -struct user_arg_ptr {
 -#ifdef CONFIG_COMPAT
 -    bool is_compat;
@@ -6333,10 +4972,10 @@ index 17375e1c..727de0ca 100644
 -    } ptr;
 -};
 +#define KSU_SULOG_MAX_FILENAME_LEN 256U
-
+ 
  static struct ksu_event_queue sulog_queue;
-
-@@ -54,9 +67,13 @@ void ksu_compat_sulog(uint8_t sym)
+ 
+@@ -54,9 +79,13 @@ void ksu_compat_sulog(uint8_t sym)
  {
      struct compat_sulog_entry entry = {0};
      unsigned int uid = current_uid().val;
@@ -6345,13 +4984,13 @@ index 17375e1c..727de0ca 100644
 +#else
 +    struct timespec ts;
 +#endif
-
+ 
 -    ktime_get_boottime_ts64(&ts);
 +    ksu_sulog_boottime(&ts);
      entry.s_time = (uint32_t)ts.tv_sec;
      entry.data = (uint32_t)uid;
      memcpy((void *)&entry.data + 3, &sym, 1);
-@@ -78,7 +95,11 @@ int ksu_sulog_handle_compat_dump(void __user *uptr)
+@@ -78,7 +107,11 @@ int ksu_sulog_handle_compat_dump(void __user *uptr)
      struct sulog_entry_rcv_ptr sbuf = {0};
      uint32_t uptime;
      uint8_t local_idx;
@@ -6361,21 +5000,21 @@ index 17375e1c..727de0ca 100644
 +    struct timespec ts;
 +#endif
      struct compat_sulog_entry *local_buf;
-
+ 
      if (copy_from_user(&sbuf, uptr, sizeof(sbuf)))
-@@ -87,7 +108,7 @@ int ksu_sulog_handle_compat_dump(void __user *uptr)
+@@ -87,7 +120,7 @@ int ksu_sulog_handle_compat_dump(void __user *uptr)
      if (!sbuf.index_ptr || !sbuf.buf_ptr || !sbuf.uptime_ptr)
          return 1;
-
+ 
 -    ktime_get_boottime_ts64(&ts);
 +    ksu_sulog_boottime(&ts);
      uptime = (uint32_t)ts.tv_sec;
      if (copy_to_user((void __user *)(uintptr_t)sbuf.uptime_ptr, &uptime, sizeof(uptime)))
          return 1;
-@@ -271,9 +292,76 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
+@@ -271,9 +304,76 @@ static __u32 ksu_sulog_flatten_argv(const char __user *const __user *argv_user,
      return used + 1;
  }
-
+ 
 -static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const char __user *filename_user,
 -                                                         const char __user *const __user *argv_user, gfp_t gfp)
 +static __u32 ksu_sulog_copy_filename_kern(const char *filename, char *dst, __u32 dst_len)
@@ -6451,8 +5090,8 @@ index 17375e1c..727de0ca 100644
      struct ksu_sulog_pending_event *pending = NULL;
      struct ksu_sulog_event *event;
      void *payload = NULL;
-@@ -299,13 +387,21 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
-
+@@ -299,13 +399,21 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture(__u16 event_type, const
+ 
      remaining = KSU_SULOG_MAX_PAYLOAD_LEN - sizeof(*event);
      filename_buf = (char *)payload + sizeof(*event);
 -    filename_len = ksu_sulog_copy_filename(filename_user, filename_buf, min(remaining, KSU_SULOG_MAX_FILENAME_LEN));
@@ -6464,7 +5103,7 @@ index 17375e1c..727de0ca 100644
 +                            min(remaining, KSU_SULOG_MAX_FILENAME_LEN));
      if (!filename_len)
          goto out_free_payload;
-
+ 
      remaining -= filename_len;
      argv_buf = filename_buf + filename_len;
 -    argv_len = ksu_sulog_flatten_argv(argv_user, argv_buf, remaining);
@@ -6474,24 +5113,24 @@ index 17375e1c..727de0ca 100644
 +        argv_len = ksu_sulog_flatten_argv(argv_user, argv_buf, remaining);
      if (!argv_len)
          goto out_free_payload;
-
-@@ -336,7 +432,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture_grant_root(const struct
+ 
+@@ -336,7 +444,7 @@ static struct ksu_sulog_pending_event *ksu_sulog_capture_grant_root(const struct
      struct ksu_sulog_pending_event *pending;
      struct ksu_sulog_event *event;
-
+ 
 -    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp);
 +    pending = ksu_sulog_capture(KSU_SULOG_EVENT_IOCTL_GRANT_ROOT, NULL, NULL, gfp, false);
      if (!pending)
          return NULL;
-
-@@ -367,13 +463,19 @@ static void ksu_sulog_free_pending(struct ksu_sulog_pending_event *pending)
+ 
+@@ -367,13 +475,19 @@ static void ksu_sulog_free_pending(struct ksu_sulog_pending_event *pending)
  struct ksu_sulog_pending_event *ksu_sulog_capture_root_execve(const char __user *filename_user,
                                                                const char __user *const __user *argv_user, gfp_t gfp)
  {
 -    return ksu_sulog_capture(KSU_SULOG_EVENT_ROOT_EXECVE, filename_user, argv_user, gfp);
 +    return ksu_sulog_capture(KSU_SULOG_EVENT_ROOT_EXECVE, filename_user, argv_user, gfp, false);
  }
-
+ 
  struct ksu_sulog_pending_event *ksu_sulog_capture_sucompat(const char __user *filename_user,
                                                             const char __user *const __user *argv_user, gfp_t gfp)
  {
@@ -6504,7 +5143,7 @@ index 17375e1c..727de0ca 100644
 +{
 +    return ksu_sulog_capture(KSU_SULOG_EVENT_ROOT_EXECVE, filename, argv, gfp, true);
  }
-
+ 
  void ksu_sulog_emit_pending(struct ksu_sulog_pending_event *pending, int retval, gfp_t gfp)
 diff --git a/kernel/sulog/event.h b/kernel/sulog/event.h
 index 866fb6ad..125dbb69 100644
@@ -6518,7 +5157,7 @@ index 866fb6ad..125dbb69 100644
 +                                                                   const char *const *argv, gfp_t gfp);
  void ksu_sulog_emit_pending(struct ksu_sulog_pending_event *pending, int retval, gfp_t gfp);
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
-
+ 
 diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
 index a8ed0101..60ddac57 100644
 --- a/kernel/supercall/dispatch.c
@@ -6543,7 +5182,7 @@ index f0dd427b..2d0d88bd 100644
 +#ifdef CONFIG_KSU_SUSFS
 +#include <linux/susfs.h>
 +#endif
-
+ 
  #include "uapi/supercall.h"
  #include "supercall/internal.h"
 @@ -18,6 +21,7 @@
@@ -6551,13 +5190,13 @@ index f0dd427b..2d0d88bd 100644
  #include "klog.h" // IWYU pragma: keep
  #include "manager/manager_identity.h"
 +#include "compat/kernel_compat.h"
-
+ 
  #include "sulog/event.h"
-
+ 
 @@ -119,169 +123,294 @@ static void ksu_install_fd_tw_func(struct callback_head *cb)
      kfree(tw);
  }
-
+ 
 -static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
 +int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
 +			  void __user **arg)
@@ -6941,7 +5580,7 @@ index f0dd427b..2d0d88bd 100644
 +
 +	return 0;
 +}
-
+ 
 -    return 0;
 +#ifdef KSU_KPROBES_HOOK
 +static int reboot_handler_pre(struct kprobe *p, struct pt_regs *regs)
@@ -6955,7 +5594,7 @@ index f0dd427b..2d0d88bd 100644
 +
 +	return ksu_handle_sys_reboot(magic1, magic2, cmd, (void __user **)&arg4);
  }
-
+ 
  static struct kprobe reboot_kp = {
 -    .symbol_name = REBOOT_SYMBOL,
 -    .pre_handler = reboot_handler_pre,
@@ -6963,7 +5602,7 @@ index f0dd427b..2d0d88bd 100644
 +	.pre_handler = reboot_handler_pre,
  };
 +#endif
-
+ 
  void __init ksu_supercalls_init(void)
  {
 -    int rc;
@@ -6980,11 +5619,11 @@ index f0dd427b..2d0d88bd 100644
 +	}
 +#endif
 +}
-
+ 
 -    ksu_supercall_dump_commands();
 +void __exit ksu_supercalls_exit(void){
 +	struct mount_entry *entry, *tmp;
-
+ 
 -    rc = register_kprobe(&reboot_kp);
 -    if (rc) {
 -        pr_err("reboot kprobe failed: %d\n", rc);
@@ -6995,7 +5634,7 @@ index f0dd427b..2d0d88bd 100644
 +#ifdef KSU_KPROBES_HOOK
 +	unregister_kprobe(&reboot_kp);
 +#endif
-
+ 
 -void __exit ksu_supercalls_exit(void)
 -{
 -    unregister_kprobe(&reboot_kp);

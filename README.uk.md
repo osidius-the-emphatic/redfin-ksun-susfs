@@ -13,7 +13,7 @@ KernelSU-Next і SuSFS підтримуються окремими групам�
 ## Upstream-джерела
 
 - **Ядро Google:** [android.googlesource.com/kernel/msm](https://android.googlesource.com/kernel/msm), гілка `android-msm-redbull-4.19-android14`, базовий коміт `7b0944645172e8b690d42f68c8973ccb0ca45730`. GitHub-дзеркало доступне в [aosp-mirror/kernel_msm](https://github.com/aosp-mirror/kernel_msm).
-- **KernelSU-Next:** офіційний [`v3.4.2`](https://github.com/KernelSU-Next/KernelSU-Next/releases/tag/v3.4.2), коміт [`4c706b5938665866ebe16944a481a7b91e3396af`](https://github.com/KernelSU-Next/KernelSU-Next/commit/4c706b5938665866ebe16944a481a7b91e3396af). Focused-патч `patches/ksun-v342-redfin-port.patch` зберігає офіційні джерела драйвера і додає лише manual-hook/SuSFS-міст для 4.19. Патч накладається чисто; збірку ядра ще не запускали. Код SuSFS LKM для цього порту не передбачається.
+- **KernelSU-Next:** офіційний upstream-тег [`v3.4.2`](https://github.com/KernelSU-Next/KernelSU-Next/releases/tag/v3.4.2), точний коміт [`4c706b5938665866ebe16944a481a7b91e3396af`](https://github.com/KernelSU-Next/KernelSU-Next/commit/4c706b5938665866ebe16944a481a7b91e3396af). Focused `patches/ksun-v342-redfin-port.patch` зберігає його kprobe/tracepoint-архітектуру і додає лише сумісність із 4.19; коду SuSFS LKM у ньому немає.
 - **Референсний порт SuSFS v2.2.0:** [sreeshankark/android_kernel_oneplus_avicii](https://github.com/sreeshankark/android_kernel_oneplus_avicii), гілка `14`, коміт [`3f46c998`](https://github.com/sreeshankark/android_kernel_oneplus_avicii/commit/3f46c998). Адаптація для Pixel 5 зафіксована в `patches/susfs-v2.2.0-redbull.patch`; під час збірки окреме дерево SuSFS не клонується.
 
 Точні ревізії, які використовує збірка, записані в `config/versions.env`; файли патчів у цьому репозиторії є перевірюваним шаром інтеграції між цими джерелами та деревом ядра Pixel 5.
@@ -58,4 +58,3 @@ KernelSU-Next і SuSFS підтримуються окремими групам�
 5. Перевірте пакет і, за потреби, вручну прошийте створені образи.
 
 Повна інструкція зі збирання, пакування, прошивання, перевірки, відновлення та оновлення наведена в [guide.uk.md](guide.uk.md).
-
