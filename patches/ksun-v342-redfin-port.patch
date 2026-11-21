@@ -1,5 +1,5 @@
 diff --git a/kernel/Kbuild b/kernel/Kbuild
-index c32fa7cd..2693a5b0 100644
+index c32fa7cd..17a726e5 100644
 --- a/kernel/Kbuild
 +++ b/kernel/Kbuild
 @@ -1,4 +1,5 @@
@@ -8,7 +8,7 @@ index c32fa7cd..2693a5b0 100644
  
  kernelsu-objs += feature/kernel_umount.o
  kernelsu-objs += feature/module_blacklist.o
-@@ -163,3 +164,65 @@ ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-mis
+@@ -163,3 +164,70 @@ ccflags-y += -Wno-strict-prototypes -Wno-int-conversion -Wno-gcc-compat -Wno-mis
  ccflags-y += -Wno-declaration-after-statement -Wno-unused-function -Wno-unused-variable
  
  # Keep a new line here!! Because someone may append config
@@ -74,6 +74,81 @@ index c32fa7cd..2693a5b0 100644
 +# Compatibility for the redbull 4.19 SELinux layout.
 +ccflags-y += -DKSU_COMPAT_USE_SELINUX_STATE
 +ccflags-y += -DKSU_COMPAT_HAS_EXPORTED_POLICY_RWLOCK
++
++# Enable KernelSU-Next's built-in kprobe path on the redfin 4.19 kernel.
++ifeq ($(CONFIG_KPROBES),y)
++ccflags-y += -DKSU_KPROBES_HOOK
++endif
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+index 88e22811..d881f3f3 100644
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -43,4 +43,65 @@ config KSU_X86_PATCH_SYSCALL_DISPATCHER
+ 	  Dynamically patch x64's hardened syscall dispatcher to support syscall hooks. This is a
+ 	  replacement for a kernel source code patch, and is useful for x86_64 LKM mode.
+ 
++config KSU_SUSFS
++	bool "KernelSU addon - SUSFS"
++	depends on KSU
++	depends on THREAD_INFO_IN_TASK
++	default y
++
++config KSU_SUSFS_SUS_PATH
++	bool "Enable to hide suspicious path"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SUS_MOUNT
++	bool "Enable to hide suspicious mounts"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SUS_KSTAT
++	bool "Enable to spoof suspicious kstat"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_TRY_UMOUNT
++	bool "Enable SuSFS try_umount"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SPOOF_UNAME
++	bool "Enable to spoof uname"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_ENABLE_LOG
++	bool "Enable SuSFS logging"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
++	bool "Enable to hide KernelSU and SuSFS symbols"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	bool "Enable to spoof cmdline or bootconfig"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_OPEN_REDIRECT
++	bool "Enable open redirect"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SUS_MAP
++	bool "Enable to hide suspicious mapped files"
++	depends on KSU_SUSFS
++	default y
++
++config KSU_SUSFS_SUS_MEMFD
++	bool "Enable suspicious memfd handling"
++	depends on KSU_SUSFS
++	default n
++
+ endmenu
 diff --git a/kernel/compat/kernel_compat.c b/kernel/compat/kernel_compat.c
 new file mode 100644
 index 00000000..6deb054f
