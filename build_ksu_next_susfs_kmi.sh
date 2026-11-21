@@ -141,7 +141,7 @@ while IFS= read -r patch_name; do
   echo "-- $patch_name"
   patch --batch --fuzz=0 --forward -d "$KERNEL" -p1 < "$PATCH/$patch_name" || die "failed to apply $patch_name"
 done < "$PATCH/series"
-for spec in 'drivers/kernelsu/Kbuild:hook/syscall_event_bridge.o' 'drivers/kernelsu/hook/syscall_hook_manager.c:ksu_syscall_table_hook' 'fs/open.c:susfs_open_redirect_spoof_do_sys_openat' 'fs/stat.c:susfs_generic_fillattr_spoofer' 'fs/susfs.c:SUSFS_VERSION'; do
+for spec in 'drivers/kernelsu/Kbuild:hook/syscall_event_bridge.o' 'drivers/kernelsu/hook/syscall_hook_manager.c:ksu_syscall_hook_manager_init' 'fs/open.c:susfs_open_redirect_spoof_do_sys_openat' 'fs/stat.c:susfs_generic_fillattr_spoofer' 'fs/susfs.c:SUSFS_VERSION'; do
   rel="${spec%%:*}"; token="${spec##*:}"
   grep -q "$token" "$KERNEL/$rel" || die "missing $token in $rel"
 done
