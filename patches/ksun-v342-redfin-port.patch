@@ -4804,6 +4804,19 @@ index 866fb6ad..125dbb69 100644
  void ksu_sulog_emit_pending(struct ksu_sulog_pending_event *pending, int retval, gfp_t gfp);
  int ksu_sulog_emit_grant_root(int retval, __u32 uid, __u32 euid, gfp_t gfp);
 
+diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
+index a8ed0101..60ddac57 100644
+--- a/kernel/supercall/dispatch.c
++++ b/kernel/supercall/dispatch.c
+@@ -4,6 +4,8 @@
+ #include <linux/string.h>
+ #include <linux/uaccess.h>
+ #include <linux/version.h>
++#include <linux/sched/signal.h>
++#include <linux/sched/task.h>
+ #include <linux/thread_info.h>
+ #include "uapi/supercall.h"
+ #include "supercall/internal.h"
 diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
 index f0dd427b..2d0d88bd 100644
 --- a/kernel/supercall/supercall.c
