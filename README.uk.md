@@ -10,6 +10,18 @@
 
 KernelSU-Next і SuSFS підтримуються окремими групами патчів. Тому зовнішні ревізії, порядок патчів і зміни сумісності видимі в Git та можуть перевірятися й оновлюватися незалежно.
 
+Поточне дерево містить закріплений hardening-патч SuSFS v2.2.0 та суворіші
+перевірки походження збірки й пакування. Його зібрано, запаковано, прошито й
+прийнято KernelSU-Next Manager на пристрої.
+
+## Поточний стан перевірки
+
+Поточна збірка `ksun-3.4.2-susfs-2.2.0` пройшла компіляцію, створення образів
+і ABI-аудит стокових vendor-модулів: 111 модулів, нуль CRC-розбіжностей і нуль
+відсутніх символів ядра. KernelSU-Next Manager підтверджує runtime-інтеграцію
+завантаженого образу: v3.4.2 (33355-5), BUILT-IN (GKI1), hook-режим Tracepoint,
+SuSFS v2.2.0 (NON-GKI) і ввімкнений ReZygisk.
+
 ## Upstream-джерела
 
 - **Ядро Google:** [android.googlesource.com/kernel/msm](https://android.googlesource.com/kernel/msm), гілка `android-msm-redbull-4.19-android14`, базовий коміт `7b0944645172e8b690d42f68c8973ccb0ca45730`. GitHub-дзеркало доступне в [aosp-mirror/kernel_msm](https://github.com/aosp-mirror/kernel_msm).

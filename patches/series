@@ -1,7 +1,9 @@
 susfs-v2.2.0-redbull.patch
 susfs-mount-namespace-copy.patch
 susfs-open-redirect-redbull.patch
+ksun-supercall-reboot-redbull.patch
 kmi-vfsmount.patch
 kmi-stat-crc-full.patch
 kmi-namei-crc-full.patch
 redbull-defconfig.patch
+susfs-v2.2.0-hardening.patch

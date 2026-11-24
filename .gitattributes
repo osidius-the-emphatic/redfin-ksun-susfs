@@ -1,5 +1,6 @@
 *.sh text eol=lf
 *.patch text eol=lf
+patches/ksun-v342-redfin-port.patch whitespace=-trailing-space
 *.env text eol=lf
 *.md text eol=lf
 patches/series text eol=lf

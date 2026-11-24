@@ -17,10 +17,11 @@ derivative kernel image.
 KernelSU-Next
 -------------
 
-ksun-disable-seccomp-filter-count.patch is applied to the KernelSU-Next
-revision pinned in config/versions.env. KernelSU-Next is obtained separately
-from https://github.com/sidex15/KernelSU-Next . Preserve the upstream notices
-and license when redistributing any KernelSU-Next-derived material.
+The official KernelSU-Next v3.4.2 revision pinned in config/versions.env is
+obtained separately from https://github.com/KernelSU-Next/KernelSU-Next . The
+local `ksun-v342-redfin-port.patch` adapts that revision to the redfin Linux
+4.19 build and does not change its upstream licensing. Preserve the upstream
+notices and license when redistributing any KernelSU-Next-derived material.
 
 SuSFS v2.2.0 reference port
 ----------------------------

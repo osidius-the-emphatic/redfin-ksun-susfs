@@ -3294,7 +3294,7 @@
 +#endif
 --- /dev/null
 +++ b/include/linux/susfs_def.h
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,116 @@
 +#ifndef KSU_SUSFS_DEF_H
 +#define KSU_SUSFS_DEF_H
 +
@@ -3393,18 +3393,21 @@
 +			current_uid().val >= 10000);
 +}
 +
-+#define SUSFS_IS_INODE_SUS_MAP(inode) \
-+		inode && \
-+		unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_state)) && \
-+		susfs_is_current_proc_umounted_app()
++#define SUSFS_IS_INODE_SUS_MAP(inode) ( \
++		(inode) && \
++		unlikely(test_bit(AS_FLAGS_SUS_MAP, &(inode)->i_state)) && \
++		susfs_is_current_proc_umounted_app() \
++)
 +
-+#define SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode) \
-+		inode && \
-+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state))
++#define SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode) ( \
++		(inode) && \
++		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state)) \
++)
 +
-+#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \
-+		inode && \
-+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state)) && \
-+		susfs_is_current_proc_umounted_app()
++#define SUSFS_IS_INODE_OPEN_REDIRECT(inode) ( \
++		(inode) && \
++		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state)) && \
++		susfs_is_current_proc_umounted_app() \
++)
 +
 +#endif // #ifndef KSU_SUSFS_DEF_H

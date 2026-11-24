@@ -18,8 +18,33 @@ VERSIONS_FILE="$SCRIPT/config/versions.env"
 source "$VERSIONS_FILE"
 KSU_REF="${KSUN_REF:?KSUN_REF is not set}"
 KSU_EXPECTED_COMMIT="${KSUN_EXPECTED_COMMIT:?KSUN_EXPECTED_COMMIT is not set}"
+KSU_RUNTIME_PATCH_REL="${KSUN_RUNTIME_PATCH:?KSUN_RUNTIME_PATCH is not set}"
+KSU_RUNTIME_PATCH_EXPECTED_SHA256="${KSUN_RUNTIME_PATCH_SHA256:?KSUN_RUNTIME_PATCH_SHA256 is not set}"
 GOOGLE_BASE_COMMIT="${GOOGLE_BASE_COMMIT:?GOOGLE_BASE_COMMIT is not set}"
 KSU_URL="${KSUN_REPO:?KSUN_REPO is not set}"
+SUSFS_PATCH_REL="${SUSFS_REDFIN_PATCH:?SUSFS_REDFIN_PATCH is not set}"
+SUSFS_PATCH_EXPECTED_SHA256="${SUSFS_REDFIN_PATCH_SHA256:?SUSFS_REDFIN_PATCH_SHA256 is not set}"
+[[ "$SUSFS_PATCH_REL" == patches/* ]] || die "SUSFS_REDFIN_PATCH must be below patches/: $SUSFS_PATCH_REL"
+SUSFS_PATCH="$SCRIPT/$SUSFS_PATCH_REL"
+[[ -f "$SUSFS_PATCH" ]] || die "pinned SuSFS patch not found: $SUSFS_PATCH_REL"
+SUSFS_PATCH_ACTUAL_SHA256="$(sha256sum "$SUSFS_PATCH" | awk '{print $1}')"
+[[ "$SUSFS_PATCH_ACTUAL_SHA256" == "$SUSFS_PATCH_EXPECTED_SHA256" ]] ||
+  die "pinned SuSFS patch hash mismatch: expected $SUSFS_PATCH_EXPECTED_SHA256, got $SUSFS_PATCH_ACTUAL_SHA256"
+SUSFS_HARDENING_REL="${SUSFS_HARDENING_PATCH:?SUSFS_HARDENING_PATCH is not set}"
+SUSFS_HARDENING_EXPECTED_SHA256="${SUSFS_HARDENING_PATCH_SHA256:?SUSFS_HARDENING_PATCH_SHA256 is not set}"
+[[ "$SUSFS_HARDENING_REL" == patches/* ]] || die "SUSFS_HARDENING_PATCH must be below patches/: $SUSFS_HARDENING_REL"
+SUSFS_HARDENING_PATCH_FILE="$SCRIPT/$SUSFS_HARDENING_REL"
+[[ -f "$SUSFS_HARDENING_PATCH_FILE" ]] || die "pinned SuSFS hardening patch not found: $SUSFS_HARDENING_REL"
+SUSFS_HARDENING_ACTUAL_SHA256="$(sha256sum "$SUSFS_HARDENING_PATCH_FILE" | awk '{print $1}')"
+[[ "$SUSFS_HARDENING_ACTUAL_SHA256" == "$SUSFS_HARDENING_EXPECTED_SHA256" ]] ||
+  die "pinned SuSFS hardening patch hash mismatch: expected $SUSFS_HARDENING_EXPECTED_SHA256, got $SUSFS_HARDENING_ACTUAL_SHA256"
+[[ "$KSU_RUNTIME_PATCH_REL" == patches/* ]] ||
+  die "KSUN_RUNTIME_PATCH must be below patches/: $KSU_RUNTIME_PATCH_REL"
+KSU_RUNTIME_PATCH="$SCRIPT/$KSU_RUNTIME_PATCH_REL"
+[[ -f "$KSU_RUNTIME_PATCH" ]] || die "pinned KSUN runtime patch not found: $KSU_RUNTIME_PATCH_REL"
+KSU_RUNTIME_PATCH_ACTUAL_SHA256="$(sha256sum "$KSU_RUNTIME_PATCH" | awk '{print $1}')"
+[[ "$KSU_RUNTIME_PATCH_ACTUAL_SHA256" == "$KSU_RUNTIME_PATCH_EXPECTED_SHA256" ]] ||
+  die "pinned KSUN runtime patch hash mismatch: expected $KSU_RUNTIME_PATCH_EXPECTED_SHA256, got $KSU_RUNTIME_PATCH_ACTUAL_SHA256"
 LOCAL_BRANCH="redbull-ksu-susfs-kmi"
 
 usage() {
@@ -93,6 +118,9 @@ fi
 git -C "$KERNEL" cat-file -e "$GOOGLE_BASE_COMMIT^{commit}" \
   || die "pinned Google base commit is unavailable locally: $GOOGLE_BASE_COMMIT; run repo sync once."
 
+# Never allow a proof or module manifest from an earlier build to authenticate
+# files produced by this invocation.
+rm -f -- "$DIST/ksu-next-susfs-build-proof.txt" "$DIST/ksu-next-susfs-modules.sha256"
 echo '== 0/5: reset pinned Google kernel source =='
 git -C "$KERNEL" reset --hard "$GOOGLE_BASE_COMMIT"
 git -C "$KERNEL" clean -fd
@@ -103,6 +131,10 @@ while IFS= read -r patch_name; do
   [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
   [[ -f "$PATCH/$patch_name" ]] || die "patch not found: $patch_name"
 done < "$PATCH/series"
+grep -Fxq "${SUSFS_PATCH_REL#patches/}" "$PATCH/series" ||
+  die "pinned SuSFS patch is not listed in patches/series: $SUSFS_PATCH_REL"
+grep -Fxq "${SUSFS_HARDENING_REL#patches/}" "$PATCH/series" ||
+  die "pinned SuSFS hardening patch is not listed in patches/series: $SUSFS_HARDENING_REL"
 SECCOMP_STOCK_SHA="$(sha256sum "$KERNEL/include/linux/seccomp.h" | awk '{print $1}')"
 
 echo '== 1/5: pinned KernelSU-Next =='
@@ -132,7 +164,11 @@ grep -q 'source "drivers/kernelsu/Kconfig"' "$KERNEL/drivers/Kconfig" || sed -i 
 
 echo '== 2/5: KSU compatibility patch =='
 patch --batch --fuzz=0 --forward -d "$KSU" -p1 < "$PATCH/ksun-v342-redfin-port.patch" || die 'the official v3.4.2 redfin compatibility patch failed.'
+git -C "$KSU" apply --check --whitespace=error "$KSU_RUNTIME_PATCH" || die 'the v3.4.2 redfin runtime compatibility patch check failed.'
+git -C "$KSU" apply --whitespace=error "$KSU_RUNTIME_PATCH" || die 'the v3.4.2 redfin runtime compatibility patch failed.'
 grep -Eq '^config[[:space:]]+KSU_SUSFS$' "$KERNEL/drivers/kernelsu/Kconfig" || die 'the v3.4.2 redfin port did not add KSU_SUSFS.'
+grep -q 'pmd_sect' "$KSU/kernel/hook/arm64/patch_memory.c" || die 'the v3.4.2 redfin runtime patch did not add PMD section support.'
+grep -q 'ksu_resolve_syscall_entry_target' "$KSU/kernel/hook/arm64/syscall_hook.c" || die 'the v3.4.2 redfin runtime patch did not add CFI syscall-entry resolution.'
 
 echo '== 3/5: strict kernel patch series =='
 while IFS= read -r patch_name; do
@@ -195,7 +231,7 @@ ACTUAL_UTS_RELEASE="$(sed -n 's/^#define UTS_RELEASE "\(.*\)"$/\1/p' "$UTS_RELEA
 for expected in \
   'CONFIG_CFI=y' 'CONFIG_CFI_CLANG=y' 'CONFIG_CFI_CLANG_SHADOW=y' \
   '# CONFIG_THINLTO is not set' 'CONFIG_TRIM_UNUSED_KSYMS=y' \
-  'CONFIG_KPROBES=y' 'CONFIG_KSU=y' \
+  'CONFIG_KPROBES=y' 'CONFIG_KALLSYMS_ALL=y' 'CONFIG_KSU=y' \
   'CONFIG_KSU_SUSFS=y' 'CONFIG_KSU_SUSFS_SUS_PATH=y' \
   'CONFIG_KSU_SUSFS_SUS_MOUNT=y' 'CONFIG_KSU_SUSFS_SUS_KSTAT=y' \
   'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'; do
@@ -210,11 +246,21 @@ echo '== ABI check: stock vendor modules =='
 bash "$SCRIPT/tools/verify_stock_vendor_module_abi.sh" \
   --stock-vendor-img "$STOCK_VENDOR_IMG" --dist "$DIST"
 PROOF="$DIST/ksu-next-susfs-build-proof.txt"
+MODULES_MANIFEST="$DIST/ksu-next-susfs-modules.sha256"
+(
+  cd "$DIST"
+  find . -maxdepth 1 -type f -name '*.ko' -printf '%P\n' | LC_ALL=C sort |
+    xargs -r -d '\n' sha256sum
+) > "$MODULES_MANIFEST"
+[[ -s "$MODULES_MANIFEST" ]] || die "no .ko modules found in $DIST for the proof manifest."
 {
   echo "google_base_commit=$GOOGLE_BASE_COMMIT"
   echo "ksun_repo=$KSU_URL"
   echo "ksun_ref=$KSU_REF"
   echo "ksun_commit=$KSU_HEAD"
+  echo "ksun_runtime_patch_sha256=$KSU_RUNTIME_PATCH_ACTUAL_SHA256"
+  echo "susfs_patch_sha256=$SUSFS_PATCH_ACTUAL_SHA256"
+  echo "susfs_hardening_patch_sha256=$SUSFS_HARDENING_ACTUAL_SHA256"
   echo "kernel_release=$KERNEL_RELEASE"
   echo "ksun_rev_count=$(git -C "$KSU" rev-list --count HEAD)"
   echo "ksun_version_code=$(expr 30000 + $(git -C "$KSU" rev-list --count HEAD))"
@@ -223,6 +269,8 @@ PROOF="$DIST/ksu-next-susfs-build-proof.txt"
   echo "final_config_sha256=$(sha256sum "$FINAL_CONFIG" | awk '{print $1}')"
   echo "image_lz4_dtb_sha256=$(sha256sum "$DIST/Image.lz4-dtb" | awk '{print $1}')"
   echo "vmlinux_sha256=$(sha256sum "$DIST/vmlinux" | awk '{print $1}')"
+  echo "module_count=$(wc -l < "$MODULES_MANIFEST")"
+  echo "modules_manifest_sha256=$(sha256sum "$MODULES_MANIFEST" | awk '{print $1}')"
   echo "patch_series=$PATCH/series"
 } > "$PROOF"
 echo 'Build completed. Packaging and flashing are separate operations.'

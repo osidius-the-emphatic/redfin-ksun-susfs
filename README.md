@@ -10,6 +10,18 @@ The project turns the pinned Google kernel source into a verifiable KernelSU-Nex
 
 KernelSU-Next and SuSFS are maintained as separate patch groups. Upstream revisions, patch order, and compatibility changes are therefore visible in Git and can be reviewed or updated independently.
 
+The current source includes a pinned SuSFS v2.2.0 hardening patch and stricter
+build/package provenance checks. It has been built, packaged, flashed, and
+accepted by KernelSU-Next Manager on the device.
+
+## Current validation status
+
+The current `ksun-3.4.2-susfs-2.2.0` build passed compilation, image creation,
+and the stock-vendor ABI audit for 111 modules with zero CRC mismatches and zero
+missing kernel symbols. KernelSU-Next Manager confirms runtime integration on
+the booted image: v3.4.2 (33355-5), BUILT-IN (GKI1), Tracepoint hooks, SuSFS
+v2.2.0 (NON-GKI), and ReZygisk enabled.
+
 ## Upstream sources
 
 - **Google kernel:** [android.googlesource.com/kernel/msm](https://android.googlesource.com/kernel/msm), branch `android-msm-redbull-4.19-android14`, base commit `7b0944645172e8b690d42f68c8973ccb0ca45730`. A GitHub mirror is available at [aosp-mirror/kernel_msm](https://github.com/aosp-mirror/kernel_msm).

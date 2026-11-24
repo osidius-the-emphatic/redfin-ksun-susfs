@@ -1,0 +1,63 @@
+--- a/fs/readdir.c
++++ b/fs/readdir.c
+@@ -260,6 +260,7 @@
+ 	}
+ 	if (susfs_is_inode_sus_path(inode)) {
+ 		iput(inode);
++		buf->error = 0;
+ 		return 0;
+ 	}
+ 	iput(inode);
+@@ -372,6 +373,7 @@
+ 	}
+ 	if (susfs_is_inode_sus_path(inode)) {
+ 		iput(inode);
++		buf->error = 0;
+ 		return 0;
+ 	}
+ 	iput(inode);
+@@ -584,6 +586,7 @@
+ 	}
+ 	if (susfs_is_inode_sus_path(inode)) {
+ 		iput(inode);
++		buf->error = 0;
+ 		return 0;
+ 	}
+ 	iput(inode);
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -4697,10 +4697,6 @@
+ 	if (down_read_killable(&mm->mmap_sem))
+ 		return 0;
+ 
+-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+-	vma = find_vma(mm, addr);
+-#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+-
+ 	/* ignore errors, just check how much was successfully transferred */
+ 	while (len) {
+ 		int bytes, ret, offset;
+@@ -4708,7 +4704,11 @@
+ 		struct page *page = NULL;
+ 
+ #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+-		if (vma && vma->vm_file && SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))
++		/* Look the vma up for every page: 'vma' from the previous
++		 * get_user_pages_remote() belongs to the previous address. */
++		vma = find_vma(mm, addr);
++		if (vma && vma->vm_start <= addr && vma->vm_file &&
++		    SUSFS_IS_INODE_SUS_MAP(file_inode(vma->vm_file)))
+ 			break;
+ #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
+ 		ret = get_user_pages_remote(tsk, mm, addr, 1,
+--- a/kernel/kallsyms.c
++++ b/kernel/kallsyms.c
+@@ -664,7 +664,7 @@
+ 	} else
+ 
+ #ifndef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+-		seq_printf(m, "%pK %c %s\n", (void *)iter->value,
++		seq_printf(m, "%px %c %s\n", value,
+ 			   iter->type, iter->name);
+ #else
+ 	{

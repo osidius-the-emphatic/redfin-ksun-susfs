@@ -6,10 +6,19 @@ This is the reproducible workflow for the Pixel 5 (`redfin`) Android 14 kernel i
 
 The scripts prepare the source tree and create images. They do **not** flash the phone. Run the build and package commands yourself; both can take time.
 
-The current `ksun-3.4.2-susfs-2.2` branch uses the official KernelSU-Next
+The current `ksun-3.4.2-susfs-2.2.0` branch uses the official KernelSU-Next
 v3.4.2 source with a focused 4.19 compatibility patch and built-in SuSFS
-v2.2.0. The latest patch-only validation is clean; a full kernel compile is
-still required before packaging or flashing this branch.
+v2.2.0. The latest source completed compilation, image creation, vendor-module
+ABI checking, and packaging. It was flashed and booted successfully:
+KernelSU-Next Manager reports `v3.4.2 (33355-5)`, `BUILT-IN (GKI1)`, Tracepoint
+hooks, SuSFS `v2.2.0 (NON-GKI)`, enabled ReZygisk, and kernel release
+`4.19.278-ksun-susfs-gd60af4b5781f`.
+
+The current source additionally includes the pinned
+`susfs-v2.2.0-hardening.patch`, and the resulting source has been included in
+the successful build and runtime test above. A raw bugreport was not supplied;
+early dispatcher messages are optional diagnostics rather than a remaining
+acceptance criterion.
 
 ## Scope and assumptions
 
@@ -29,9 +38,9 @@ Do not use `build_redbull.sh` for this project. It selects a different configura
 | --- | --- |
 | `build_ksu_next_susfs_kmi.sh` | Resets the source to the pinned base, applies the patch series, builds the kernel, and writes build proof. It does not package or flash. |
 | `package_kernel_images.sh` | Packages the already-built kernel into `boot.img` and `vendor_boot.img`. It does not build or flash. |
-| `patches/` | Ordered, reviewable KernelSU-Next, SuSFS, manual-hook, KMI, and configuration patches. |
+| `patches/` | Ordered, reviewable KernelSU-Next, SuSFS, KMI, and configuration patches. |
 | `patches/series` | Authoritative order of the patch series. |
-| `config/versions.env` | Pinned Google kernel base and KernelSU-Next revision. |
+| `config/versions.env` | Pinned Google kernel base, KernelSU-Next revision, runtime-fix patch, and expected patch SHA-256 values. |
 | `tools/verify_stock_vendor_module_abi.sh` | Internal ABI check against stock vendor modules. |
 | `out/android-msm-pixel-4.19/dist/` | Build output, proof, ABI report, and final kernel artifacts. Not tracked by Git. |
 | `stock-images/` | Matching factory `boot.img`, `vendor_boot.img`, and `vendor.img`. Not tracked by Git. |
@@ -87,6 +96,12 @@ build:
 
 ```bash
 sha256sum "$PROJECT/patches/ksun-v342-redfin-port.patch"
+```
+
+The separate runtime-fix patch is pinned too:
+
+```bash
+sha256sum "$PROJECT/patches/ksun-v342-runtime-fixes.patch"
 ```
 
 The shared script inputs are:
@@ -196,6 +211,27 @@ verified revision.
 
 The resulting kernel release is `4.19.278-ksun-susfs-g<integration-sha>`, where the SHA identifies the one local commit containing the applied integration. It deliberately does not use the uninformative `00001` Git-distance suffix.
 
+The v3.4.2 dispatcher port requires `CONFIG_KALLSYMS_ALL=y` on this 4.19
+kernel. The dispatcher resolves the `const` `sys_call_table` through kallsyms;
+without the all-symbols table it can initialize without a hard build error but
+leave the syscall hooks inactive. Linux 4.19 also exposes this table through a
+PMD section mapping rather than `pmd_leaf`; the separate runtime-fix patch
+adds that translation path. With CFI/LTO enabled, redfin's syscall table stores
+short ARM64 branch thunks rather than direct `__arm64_sys_ni_syscall` pointers;
+the runtime-fix patch resolves only the AArch64 `B` opcode (`0x14...`) before
+selecting the dispatcher slot; it does not treat `BL` (`0x94...`) as a syscall
+stub. The build script verifies both patches before the build. A build without
+these fixes is not a valid runtime test, even if
+compilation, linking, and the vendor-module ABI report succeed.
+
+Before it resets any source checkout, the builder verifies that the SuSFS VFS
+patch matches `SUSFS_REDFIN_PATCH_SHA256` in `config/versions.env` and that
+the pinned patch is listed in `patches/series`. It records the verified hash in
+the build proof. A hash mismatch is a stop condition, not a reason to bypass
+the check. It likewise verifies and applies the pinned KSUN runtime-fix patch
+with `git apply` after the main v3.4.2 port; that patch is intentionally outside the kernel
+`patches/series` because it modifies the KernelSU-Next checkout.
+
 ```bash
 cd "$KERNEL_CHECKOUT"
 bash "$PROJECT/build_ksu_next_susfs_kmi.sh"
@@ -231,7 +267,7 @@ sed -n '1,260p' out/android-msm-pixel-4.19/dist/stock-vendor-module-abi-kmi-full
 test -s out/android-msm-pixel-4.19/dist/Image.lz4-dtb
 ```
 
-These files are machine-readable evidence, not extra inputs to the next command. A successful build exits with status 0, creates both files, and prints their paths. In the proof, `seccomp_stock_sha256` and `seccomp_post_build_sha256` must be identical, image hashes must be present, and the KernelSU/SuSFS configuration checks must have passed. In the ABI report, `crc_mismatches=0` and `missing_kernel_symbols=0` are mandatory; `checked_vendor_modules` must be positive (111 for the referenced stock image). Any non-zero mismatch, missing file, or non-zero command exit means stop: do not package or flash.
+These files are machine-readable evidence, not extra inputs to the next command. A successful build exits with status 0, creates both files plus `ksu-next-susfs-modules.sha256`, and prints their paths. In the proof, `seccomp_stock_sha256` and `seccomp_post_build_sha256` must be identical, image hashes must be present, `susfs_hardening_patch_sha256` must equal the pinned value, and `module_count`/ `modules_manifest_sha256` must be present. In the ABI report, `crc_mismatches=0` and `missing_kernel_symbols=0` are mandatory; `checked_vendor_modules` must be positive (111 for the referenced stock image). Any non-zero mismatch, missing file, or non-zero command exit means stop: do not package or flash.
 
 `sed` only prints the evidence; it does not change anything. `test -s` prints nothing and returns 0 when the kernel image exists and is non-empty; a missing or empty image returns 1. The proof records the exact KernelSU source commit, `seccomp` integrity checks, final configuration checksum, and image hashes. The patch series is recorded separately in `patches/series`.
 
@@ -244,7 +280,13 @@ cd "$KERNEL_CHECKOUT"
 bash "$PROJECT/package_kernel_images.sh"
 ```
 
-The script prints the exact output directory. Inspect it before flashing; it must contain replacement `boot.img`, `vendor_boot.img`, checksums, proof, and packaging metadata.
+The script prints the exact output directory. It refuses a stale `dist/`:
+`Image.lz4-dtb`, `vmlinux`, and every `.ko` must match the build proof and
+module manifest. It also checks stock CPIO owners before using `-R 0:0`,
+compares permission bits, and carries stock AVB properties, rollback metadata,
+and flags into the test-key footer before comparing them with the final images.
+Inspect the output before flashing; it must contain replacement `boot.img`,
+`vendor_boot.img`, checksums, proof, and packaging metadata.
 
 There is normally no reason to maintain separate stock-image paths: both
 scripts use the same `$KERNEL_CHECKOUT/stock-images` default. Set
@@ -362,17 +404,25 @@ For the A/B device, inspect the active slot first with `fastboot getvar current-
 
 ## Updating KernelSU-Next or SuSFS
 
-The `ksun-3.4.2-susfs-2.2` branch pins official KernelSU-Next `v3.4.2` and
+The `ksun-3.4.2-susfs-2.2.0` branch pins official KernelSU-Next `v3.4.2` and
 applies `patches/ksun-v342-redfin-port.patch`. This focused patch retains the
 official v3.4.2 kprobe/tracepoint hook architecture and adds only Linux 4.19
 API compatibility plus the built-in SuSFS v2.2 bridge. The separate
 `susfs-open-redirect-redbull.patch` contains only the VFS open-redirect hook;
-the old manual-hook patch is not in the series.
+the old manual-hook patch is not in the series. The additional
+`ksun-supercall-reboot-redbull.patch` dispatches KSU/SuSFS reboot commands
+from the normal `kernel/reboot.c` syscall context. On 4.19 this is required:
+the kprobe pre-handler context cannot safely execute SUSFS operations that
+copy user memory, resolve paths, take mutexes, or allocate with `GFP_KERNEL`.
+The upstream syscall-table/tracepoint hook path remains enabled; only the
+reboot kprobe marker is deliberately absent.
 
 The complete `drivers/kernelsu/` target was compile-checked against the
 redfin 4.19 tree with the official v3.4.2 object list. The test reached
-`AR drivers/kernelsu/built-in.a` with no KSU compile errors; a full kernel link
-and ABI build are still required before packaging.
+`AR drivers/kernelsu/built-in.a` with no KSU compile errors. The current full
+kernel link and vendor-module ABI build also passed, as did device runtime
+validation. The historical package proof remains useful for provenance checks;
+the Manager result above is the current runtime evidence.
 
 On redfin 4.19, the v3.4.2 KSU compatibility patch also supplies the
 `can_umount()`/`path_umount()` backport through Kbuild and the matching
@@ -389,13 +439,13 @@ Do not edit generated source files or replace whole source trees with archives. 
 5. Review the series with `git apply --check` or the build script preparation checks.
 6. Perform a clean build and require a zero-mismatch vendor-module ABI report before packaging.
 
-The stable KernelSU-Next Manager v3.4.2 uses UAPI 5. The built driver reports
-the official v3.4.2 tag; the device build still requires the normal full-build
-and runtime checks before it is considered validated.
+The stable KernelSU-Next Manager v3.4.2 uses UAPI 5. The current build reports
+the official v3.4.2 tag, passed the full-build and vendor-module ABI checks,
+and was accepted and operated by the Manager on the device.
 
 ## Why `versions.env` exists
 
-`config/versions.env` is the single source of truth for the upstream inputs: the Google kernel base commit and the KernelSU-Next tag/commit pair. The builder reads it before changing the source tree and refuses an unexpected commit. This prevents a patch series from being applied to an unrecorded upstream revision and makes an update a small, reviewable change instead of a hidden archive replacement. It does not contain device images or tool paths.
+`config/versions.env` is the single source of truth for the upstream inputs: the Google kernel base commit, the KernelSU-Next tag/commit pair, and the expected SHA-256 of the built-in SuSFS VFS patch. The builder reads it before changing the source tree and refuses an unexpected commit or a changed SuSFS patch. This prevents a patch series from being applied to an unrecorded upstream revision and makes an update a small, reviewable change instead of a hidden archive replacement. It does not contain device images or tool paths.
 
 ## Troubleshooting
 
@@ -429,6 +479,5 @@ Record the Manager version and the proof's source commit when comparing builds.
 
 The original incompatibility was caused by changed exported-symbol CRCs in the kernel while the Pixel 5 stock `vendor.img` retained modules built against stock CRCs. The KMI approach restores stock-module compatibility without removing SuSFS. A successful audit previously checked 111 stock vendor modules and found zero CRC mismatches and zero missing kernel symbols.
 
-For detailed working history and investigation notes, see
-[HANDOFF-context.md](HANDOFF-context.md). It is not required to execute this
-procedure.
+Detailed working history and investigation notes are retained in the private
+checkout; they are not required to execute this procedure.
